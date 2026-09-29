@@ -5,9 +5,9 @@ import { budgetToEffort, THINKING_BUDGETS } from '../plugin/effort.js'
 import { buildModelRegistry } from '../plugin/model-registry.js'
 import { resolveKiroModel } from '../plugin/models.js'
 
-const registry = buildModelRegistry() as Record<string, any>
+const registry = new Map(buildModelRegistry('kiro').map((model) => [model.id as string, model]))
 
-const thinkingIDs = Object.keys(registry).filter((id) => id.endsWith('-thinking'))
+const thinkingIDs = [...registry.keys()].filter((id) => id.endsWith('-thinking'))
 const XHIGH_MODELS = [
   'claude-opus-4-7-thinking',
   'claude-opus-4-8-thinking',
@@ -17,7 +17,7 @@ const XHIGH_MODELS = [
 
 describe('model registry', () => {
   test('every advertised model is resolvable to a Kiro model ID', () => {
-    for (const modelID of Object.keys(registry)) {
+    for (const modelID of registry.keys()) {
       expect(SUPPORTED_MODELS).toContain(modelID)
     }
   })
@@ -38,27 +38,24 @@ describe('model registry', () => {
   })
 
   test('does not advertise Kiro GPT tiers, which use a different reasoning contract', () => {
-    for (const id of Object.keys(registry)) {
+    for (const id of registry.keys()) {
       expect(id.startsWith('gpt-')).toBe(false)
     }
   })
 
   describe('reasoning capability flags', () => {
-    // Both are required: `reasoning` declares the capability, `interleaved.field`
-    // tells OpenCode reasoning arrives as `reasoning_content` deltas. Missing
-    // either one means reasoning chunks are silently dropped.
-    test('every thinking model declares reasoning and the reasoning_content field', () => {
+    // `compatibility.reasoningField` tells OpenCode reasoning arrives as
+    // `reasoning_content` deltas. Without it reasoning chunks are silently dropped.
+    test('every thinking model declares the reasoning_content field', () => {
       for (const id of thinkingIDs) {
-        expect(registry[id].reasoning).toBe(true)
-        expect(registry[id].interleaved).toEqual({ field: 'reasoning_content' })
+        expect(registry.get(id)?.compatibility).toEqual({ reasoningField: 'reasoning_content' })
       }
     })
 
-    test('non-thinking models declare neither', () => {
-      for (const [id, model] of Object.entries(registry)) {
+    test('non-thinking models declare no compatibility overrides', () => {
+      for (const [id, model] of registry) {
         if (id.endsWith('-thinking')) continue
-        expect(model.reasoning).toBeUndefined()
-        expect(model.interleaved).toBeUndefined()
+        expect(model.compatibility).toBeUndefined()
       }
     })
   })
@@ -66,17 +63,18 @@ describe('model registry', () => {
   describe('thinking variants', () => {
     test('offers xhigh only on models Kiro documents as xhigh-capable', () => {
       for (const id of thinkingIDs) {
-        const hasXHigh = Object.keys(registry[id].variants).includes('xhigh')
-        expect(hasXHigh).toBe(XHIGH_MODELS.includes(id))
+        const variantIDs = (registry.get(id)?.variants ?? []).map((variant) => String(variant.id))
+        expect(variantIDs.includes('xhigh')).toBe(XHIGH_MODELS.includes(id))
       }
     })
 
     test('variant budgets map back to the effort level they are named for', () => {
       for (const id of thinkingIDs) {
         const kiroModel = resolveKiroModel(id)
-        for (const [name, variant] of Object.entries<any>(registry[id].variants)) {
-          const level = name as Effort
-          const budget = variant.thinkingConfig.thinkingBudget
+        for (const variant of registry.get(id)?.variants ?? []) {
+          const level = String(variant.id) as Effort
+          const budget = (variant.settings?.thinkingConfig as { thinkingBudget: number })
+            .thinkingBudget
           expect(budget).toBe(THINKING_BUDGETS[level])
           expect(budgetToEffort(budget, kiroModel)).toBe(level)
         }
@@ -85,19 +83,23 @@ describe('model registry', () => {
 
     test('variants are ordered low to max', () => {
       for (const id of thinkingIDs) {
-        const budgets = Object.values<any>(registry[id].variants).map(
-          (v) => v.thinkingConfig.thinkingBudget
+        const budgets = (registry.get(id)?.variants ?? []).map(
+          (variant) =>
+            (variant.settings?.thinkingConfig as { thinkingBudget: number }).thinkingBudget
         )
         expect(budgets).toEqual([...budgets].sort((a, b) => a - b))
       }
     })
   })
 
-  test('carries limit and modalities through to both entries', () => {
-    expect(registry['claude-opus-5'].limit).toEqual({ context: 1000000, output: 64000 })
-    expect(registry['claude-opus-5-thinking'].limit).toEqual(registry['claude-opus-5'].limit)
-    expect(registry['claude-opus-5-thinking'].modalities).toEqual(
-      registry['claude-opus-5'].modalities
+  test('carries limit and capabilities through to both entries', () => {
+    expect(registry.get('claude-opus-5')?.limit).toEqual({ context: 1000000, output: 64000 })
+    expect(registry.get('claude-opus-5-thinking')?.limit).toEqual(
+      registry.get('claude-opus-5')?.limit
     )
+    expect(registry.get('claude-opus-5-thinking')?.capabilities).toEqual(
+      registry.get('claude-opus-5')?.capabilities
+    )
+    expect(registry.get('claude-opus-5')?.capabilities.input).toEqual(['text', 'image', 'pdf'])
   })
 })

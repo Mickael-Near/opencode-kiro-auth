@@ -1,3 +1,4 @@
+import { Model, Provider } from '@opencode/plugin'
 import { EFFORT_LEVELS, supportsEffort, supportsXHighEffort, THINKING_BUDGETS } from './effort.js'
 import { resolveKiroModel } from './models.js'
 
@@ -144,54 +145,75 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
  * Build the thinking variants a model supports.
  *
  * Levels come from the model's own effort capabilities, so xhigh only appears on
- * models that accept it and the budgets stay in step with budgetToEffort.
+ * models that accept it and the budgets stay in step with budgetToEffort. The
+ * budget travels as a request body field, which the Kiro request builder reads
+ * to pick the matching `output_config.effort`.
  */
-function buildVariants(kiroModel: string): Record<string, unknown> {
-  const variants: Record<string, unknown> = {}
+function buildVariants(kiroModel: string): Model.Variant[] {
+  const variants: Model.Variant[] = []
 
   for (const level of EFFORT_LEVELS) {
     if (level === 'xhigh' && !supportsXHighEffort(kiroModel)) continue
-    variants[level] = { thinkingConfig: { thinkingBudget: THINKING_BUDGETS[level] } }
+    variants.push({
+      id: Model.VariantID.make(level),
+      settings: { thinkingConfig: { thinkingBudget: THINKING_BUDGETS[level] } }
+    })
   }
 
   return variants
 }
 
 /**
- * Model registry advertised to OpenCode.
+ * Model definitions advertised to OpenCode.
  *
- * `-thinking` entries carry `reasoning` and `interleaved`. Both are required:
- * `reasoning` declares the capability, and `interleaved.field` tells OpenCode
- * that reasoning arrives in the non-standard `reasoning_content` delta this
- * plugin emits (see streaming/openai-converter.ts). Without them OpenCode
- * silently drops every reasoning chunk and no thinking block is rendered.
+ * `-thinking` entries declare `compatibility.reasoningField`. The plugin streams
+ * reasoning as the non-standard `reasoning_content` delta (see
+ * streaming/openai-converter.ts), so OpenCode has to be told which field carries
+ * it. Without it, every reasoning chunk is silently dropped and no thinking
+ * block is rendered.
  */
-export function buildModelRegistry(): Record<string, unknown> {
-  const models: Record<string, unknown> = {}
+export function buildModelRegistry(providerID: string): Model.Info[] {
+  const models: Model.Info[] = []
+  const provider = Provider.ID.make(providerID)
 
   for (const [modelID, spec] of Object.entries(MODEL_SPECS)) {
-    models[modelID] = {
-      name: `${spec.name} (${spec.rate})`,
-      limit: spec.limit,
-      modalities: spec.modalities
-    }
+    models.push(createModel(provider, modelID, spec, false))
 
     if (!spec.thinking) continue
 
-    // Effort capability is keyed on the resolved Kiro model ID, not the
-    // OpenCode-facing one (e.g. claude-opus-5 vs claude-opus-4-6).
+    // Effort capability is keyed on the resolved Kiro model ID (e.g. claude-opus-5
+    // vs claude-sonnet-4.5), not the OpenCode-facing one.
     const kiroModel = resolveKiroModel(modelID)
     if (!supportsEffort(kiroModel)) continue
 
-    models[`${modelID}-thinking`] = {
-      name: `${spec.name} Thinking (${spec.rate})`,
-      limit: spec.limit,
-      modalities: spec.modalities,
-      reasoning: true,
-      interleaved: { field: 'reasoning_content' },
-      variants: buildVariants(kiroModel)
-    }
+    models.push(createModel(provider, `${modelID}-thinking`, spec, true))
   }
 
   return models
+}
+
+function createModel(
+  providerID: Provider.ID,
+  modelID: string,
+  spec: ModelSpec,
+  thinking: boolean
+): Model.Info {
+  const kiroModel = resolveKiroModel(modelID)
+
+  return {
+    ...Model.Info.default(providerID, Model.ID.make(modelID)),
+    name: thinking ? `${spec.name} Thinking (${spec.rate})` : `${spec.name} (${spec.rate})`,
+    limit: spec.limit,
+    capabilities: {
+      tools: true,
+      input: [...spec.modalities.input],
+      output: [...spec.modalities.output]
+    },
+    ...(thinking
+      ? {
+          compatibility: { reasoningField: 'reasoning_content' as const },
+          variants: buildVariants(kiroModel)
+        }
+      : {})
+  }
 }

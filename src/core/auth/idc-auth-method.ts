@@ -1,4 +1,3 @@
-import type { AuthOuathResult } from '@opencode-ai/plugin'
 import { execFile } from 'node:child_process'
 import { extractRegionFromArn, normalizeRegion } from '../../constants.js'
 import type { AccountRepository } from '../../infrastructure/database/account-repository.js'
@@ -49,6 +48,13 @@ function buildDeviceUrl(startUrl: string, userCode: string): string {
   return url.toString()
 }
 
+export interface IdcAuthorization {
+  url: string
+  instructions: string
+  /** Polls the device-code flow to completion and persists the resolved account. */
+  complete: () => Promise<ManagedAccount>
+}
+
 export class IdcAuthMethod {
   constructor(
     private config: any,
@@ -56,7 +62,7 @@ export class IdcAuthMethod {
     private accountManager: any
   ) {}
 
-  async authorize(inputs?: Record<string, string>): Promise<AuthOuathResult> {
+  async authorize(inputs?: Record<string, string>): Promise<IdcAuthorization> {
     const configuredServiceRegion: KiroRegion = this.config.default_region
     const invokedWithoutPrompts = !inputs || Object.keys(inputs).length === 0
 
@@ -93,8 +99,7 @@ export class IdcAuthMethod {
     return {
       url: verificationUrl,
       instructions: `Open the verification URL and complete sign-in.\nCode: ${auth.userCode}`,
-      method: 'auto',
-      callback: async (): Promise<{ type: 'success'; key: string } | { type: 'failed' }> => {
+      complete: async (): Promise<ManagedAccount> => {
         try {
           // Step 2: poll until token is issued (standard device-code flow)
           const token = await pollKiroIDCToken(
@@ -184,7 +189,7 @@ export class IdcAuthMethod {
           await this.repository.save(acc)
           this.accountManager?.addAccount?.(acc)
 
-          return { type: 'success', key: token.accessToken }
+          return acc
         } catch (e: any) {
           const err = e instanceof Error ? e : new Error(String(e))
           logger.error('IDC auth callback failed', err)

@@ -20,7 +20,7 @@ models with substantial trial quotas.
 - **High-Performance Storage**: Efficient account and usage management using native Bun
   SQLite.
 - **Native Thinking Mode**: Streams Kiro's native reasoning to OpenCode's thinking
-  block, with the reasoning flags declared on every thinking model, so it renders
+  block, with the reasoning field declared on every thinking model, so it renders
   without any model configuration.
 - **Kiro Effort Mapping**: Maps OpenCode thinking budgets to Kiro's native effort
   levels automatically, across the full `low`–`max` ladder.
@@ -33,7 +33,7 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
 ```json
 {
-  "plugin": ["@zhafron/opencode-kiro-auth"]
+  "plugins": ["@zhafron/opencode-kiro-auth"]
 }
 ```
 
@@ -41,7 +41,7 @@ That is the whole configuration. The plugin registers the `kiro` provider and
 advertises every model Kiro exposes, including a `-thinking` companion for each
 model that supports reasoning effort. Run `/models` to pick one.
 
-Defining `provider.kiro.models` yourself replaces the plugin's registry entirely.
+Defining `providers.kiro.models` yourself replaces the plugin's registry entirely.
 Only do that to rename or restrict models, and see the reasoning flags below if
 any of them are `-thinking` models.
 
@@ -51,32 +51,31 @@ Every effort-capable Claude model gets a `-thinking` companion, already carrying
 the reasoning flags and an effort ladder as variants. Nothing to configure: pick a
 `-thinking` model and cycle its variants to change reasoning depth.
 
-Each `-thinking` entry declares two fields that OpenCode needs in order to render
-reasoning:
+Each `-thinking` entry declares the compatibility override OpenCode needs in order
+to render reasoning:
 
 ```json
 {
-  "reasoning": true,
-  "interleaved": { "field": "reasoning_content" }
+  "compatibility": { "reasoningField": "reasoning_content" }
 }
 ```
 
-Both are required. `reasoning` declares the capability, and `interleaved.field`
-tells OpenCode that reasoning arrives in the non-standard `reasoning_content`
-delta this plugin emits. If either is missing, OpenCode silently drops every
-reasoning chunk and no thinking block appears.
+`compatibility.reasoningField` tells OpenCode that reasoning arrives in the
+non-standard `reasoning_content` delta this plugin emits. If it is missing,
+OpenCode silently drops every reasoning chunk and no thinking block appears.
 
-If you override `provider.kiro.models` in your own config, you replace the
-plugin's registry wholesale — copy both fields onto any `-thinking` model you
-define, or reasoning will stop rendering.
+If you override `providers.kiro.models` in your own config, you replace the
+plugin's registry wholesale — copy `compatibility.reasoningField` and the
+`capabilities` block onto any `-thinking` model you define, or reasoning will
+stop rendering.
 
 Reasoning itself comes from the API: Kiro streams `reasoningContentEvent` on
 thinking models, and the plugin forwards each one as a `reasoning_content` delta.
 Nothing needs to be enabled for that. Models that instead inline reasoning as
 `<thinking>` tags in their answer are still handled, via a fallback scraper.
 
-Variants set `thinkingConfig.thinkingBudget`, which the plugin maps to Kiro's
-native `effort` field. Bands are scaled to Kiro's real thinking ceiling
+Variants set `settings.thinkingConfig.thinkingBudget`, which the plugin maps to
+Kiro's native `effort` field. Bands are scaled to Kiro's real thinking ceiling
 (1024-128000 on opus-4.8/opus-5), so every effort level including `xhigh` is
 reachable from a budget alone:
 
@@ -104,29 +103,25 @@ setting is a global override for all supported models, not a per-model setting.
 
 1. **Authentication via Kiro CLI (Recommended)**:
    - Perform login directly in your terminal using `kiro-cli login`.
-   - The plugin automatically bootstraps a minimal `kiro` placeholder in
-     OpenCode's `auth.json` when it detects the Kiro CLI database, then imports
-     and synchronizes your active session on startup.
+   - On startup the plugin syncs your active session from the Kiro CLI database,
+     so there is nothing to paste into OpenCode.
    - For AWS IAM Identity Center (SSO/IDC), the plugin imports both the token and device
      registration (OIDC client credentials) from the `kiro-cli` database.
-2. **Direct Authentication**:
-   - Run `opencode auth login`.
-   - Select `Other`, type `kiro`, and press enter.
-   - You'll be prompted for your **IAM Identity Center Start URL** and **IAM Identity
-     Center region** (`sso_region`).
-     - Leave it blank to sign in with **AWS Builder ID**.
-     - Enter your company's Start URL (e.g. `https://your-company.awsapps.com/start`) to
-       use **IAM Identity Center (SSO)**.
-   - Note: the TUI `/connect` flow currently does **not** run plugin OAuth prompts
-     (Start URL / region), so Identity Center logins may fall back to Builder ID unless
-     you use `opencode auth login` (or preconfigure defaults in
-     `~/.config/opencode/kiro.json`).
+2. **Interactive login**:
+   - Run `/connect` and choose **Kiro**.
+   - Pick a login method:
+     - **AWS Builder ID / IAM Identity Center** — leave the Start URL blank to sign in
+       with **AWS Builder ID**, or enter your company's Start URL (e.g.
+       `https://your-company.awsapps.com/start`) to use **IAM Identity Center (SSO)**.
+     - **IAM Identity Center with Profile ARN** — the same fields plus a profile ARN.
+   - Leaving a form field blank keeps the value already set in
+     `~/.config/opencode/kiro.json`.
+   - A browser window opens directly to AWS' verification URL (no local auth
+     server). If it doesn't, copy/paste the URL and enter the code printed by OpenCode.
    - For **IAM Identity Center**, you may also need a **profile ARN** (`profileArn`).
      - If `kiro-cli` is installed and you've selected a profile once
        (`kiro-cli profile`), the plugin auto-detects it.
      - Otherwise, set `idc_profile_arn` in `~/.config/opencode/kiro.json`.
-   - A browser window will open directly to AWS' verification URL (no local auth
-     server). If it doesn't, copy/paste the URL and enter the code printed by OpenCode.
    - You can also pre-configure defaults in `~/.config/opencode/kiro.json` via
      `idc_start_url` and `idc_region`.
 3. Configuration will be automatically managed at `~/.config/opencode/kiro.db`.
@@ -138,14 +133,15 @@ path in `opencode.json` or `opencode.jsonc`:
 
 ```json
 {
-  "plugin": ["/path/to/opencode-kiro-auth"]
+  "plugins": ["/path/to/opencode-kiro-auth"]
 }
 ```
 
-Then build and restart OpenCode to pick up changes:
+OpenCode loads the local plugin's TypeScript entrypoint directly, so restart (or let the
+plugin watcher reload) OpenCode to pick up changes. Run the tests with:
 
 ```bash
-npm run build
+bun test
 ```
 
 ## Troubleshooting
@@ -161,7 +157,7 @@ This plugin reads the active profile ARN from your local `kiro-cli` database
 Fix:
 
 1. Run `kiro-cli profile` and select a profile (e.g. `QDevProfile-us-east-1`).
-2. Retry `opencode auth login` (or restart OpenCode so it re-syncs).
+2. Retry the request (or restart OpenCode so it re-syncs).
 
 ### Error: No accounts
 
@@ -172,33 +168,9 @@ This happens when the plugin has no records in `~/.config/opencode/kiro.db`.
 3. Retry the request; the plugin will attempt a Kiro CLI sync when it detects zero
    accounts.
 
-### Note: `/connect` vs `opencode auth login`
-
-If you need to enter provider-specific values for an OAuth login (like IAM Identity
-Center Start URL / region), use `opencode auth login`. The current TUI `/connect` flow
-may not display plugin OAuth prompts, so it can’t collect those inputs.
-
-Note for IDC/SSO (ODIC): the plugin may temporarily create an account with a placeholder
+Note for IDC/SSO (OIDC): the plugin may temporarily create an account with a placeholder
 email if it cannot fetch the real email during sync (e.g. offline).
 It will replace it with the real email once usage/email lookup succeeds.
-
-### Kiro CLI (Google/GitHub OAuth) users: plugin sync does not start
-
-If you authenticated via `kiro-cli login` using Google or GitHub OAuth (not AWS Builder
-ID or IAM Identity Center), OpenCode still needs a stored `kiro` auth entry before it
-will call the plugin loader.
-
-The plugin now creates that minimal placeholder automatically when it detects the local
-Kiro CLI database. Restart OpenCode after `kiro-cli login`; the loader should then run
-and sync your actual tokens into `kiro.db`. The placeholder values are not used for API
-calls.
-
-If bootstrap is skipped because `auth.json` is malformed, fix the JSON first. The plugin
-will not overwrite malformed auth files because they may contain other provider
-credentials.
-
-**Important:** Ensure `auto_sync_kiro_cli` is `true` in `~/.config/opencode/kiro.json`
-and that `kiro-cli login` succeeds.
 
 The plugin supports extensive configuration options.
 Edit `~/.config/opencode/kiro.json`:
@@ -241,7 +213,7 @@ Edit `~/.config/opencode/kiro.json`:
 - `usage_sync_max_retries`: Retry attempts for usage sync (0-5).
 - `auth_server_port_start`: Legacy/ignored (no local auth server).
 - `auth_server_port_range`: Legacy/ignored (no local auth server).
-- `usage_tracking_enabled`: Enable usage tracking and toast notifications.
+- `usage_tracking_enabled`: Enable usage tracking and the startup usage summary.
 - `auto_effort_mapping`: Automatically map OpenCode thinking budgets to Kiro effort
   levels for supported models (default: `true`).
 - `enable_log_api_request`: Enable detailed API request logging. Request logs
