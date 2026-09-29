@@ -24,6 +24,8 @@ models with substantial trial quotas.
   without any model configuration.
 - **Kiro Effort Mapping**: Maps OpenCode thinking budgets to Kiro's native effort
   levels automatically, across the full `low`–`max` ladder.
+- **Credit Quota In The Footer**: A CLI plugin shows the pooled Kiro credit usage
+  under the prompt and on the home screen, refreshed as requests land.
 - **Automated Recovery**: Exponential backoff for rate limits and automated token
   refresh.
 
@@ -98,6 +100,28 @@ need a separate request path.
 Use `~/.config/opencode/kiro.json` for plugin-wide behavior such as auth sync,
 account selection, retry limits, and `auto_effort_mapping`. A top-level `effort`
 setting is a global override for all supported models, not a per-model setting.
+
+## Credit quota indicator
+
+The package ships a second entrypoint, a CLI plugin that OpenCode loads into the
+terminal alongside the server plugin. It adds one line to the footer, under the
+prompt and on the home screen:
+
+```
+Kiro 1691.37/2000 (85%)
+```
+
+The figures are the credits pooled across every account the plugin manages, turning
+amber from 90% of the allowance. The server plugin publishes them over RPC and pushes
+an update whenever a request refreshes the quota, so the indicator also works when the
+terminal talks to a remote OpenCode server. Nothing to configure: listing the package
+in `plugins` loads both halves.
+
+This is deliberately not OpenCode's own `$ spent` figure. That one multiplies token
+counts by a per-million price, and Kiro does not bill that way — it debits credits from
+a monthly allowance, at a rate that depends on the model (Opus costs 2.2x a base
+request). Any dollar amount here would be an invented Anthropic list price rather than
+your Kiro consumption, so the plugin reports the credits instead.
 
 ## Setup
 

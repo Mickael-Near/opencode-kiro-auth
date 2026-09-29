@@ -45,6 +45,11 @@ export class RequestHandler {
     this.retryStrategy = new RetryStrategy(config)
   }
 
+  /** Notified after a request refreshes the credit quota of an account. */
+  onUsageChange(listener: () => void): void {
+    this.usageTracker.onSynced(listener)
+  }
+
   async handle(input: any, init: any, showToast: ToastFunction): Promise<Response> {
     const url = typeof input === 'string' ? input : input.url
 

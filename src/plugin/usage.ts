@@ -97,6 +97,24 @@ export function summarizeUsage(
   return { used, limit, pct }
 }
 
+// Pooled quota across every managed account, since account rotation spends from
+// all of them. Accounts Kiro has not reported an allowance for contribute their
+// consumption but no allowance, which is what the raw values already express.
+export function aggregateUsage(accounts: readonly ManagedAccount[]): {
+  used: number
+  limit: number
+  pct: number
+  accounts: number
+} {
+  let used = 0
+  let limit = 0
+  for (const account of accounts) {
+    used += account.usedCount ?? 0
+    limit += account.limitCount ?? 0
+  }
+  return { ...summarizeUsage(used, limit), accounts: accounts.length }
+}
+
 export function updateAccountQuota(
   account: ManagedAccount,
   usage: any,

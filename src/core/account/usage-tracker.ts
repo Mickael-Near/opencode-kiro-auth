@@ -13,6 +13,7 @@ interface UsageTrackerConfig {
 export class UsageTracker {
   private lastSyncTime = new Map<string, number>()
   private readonly cooldownMs: number
+  private readonly listeners: Array<() => void> = []
 
   constructor(
     private config: UsageTrackerConfig,
@@ -20,6 +21,11 @@ export class UsageTracker {
     private repository: AccountRepository
   ) {
     this.cooldownMs = config.usage_sync_cooldown_ms ?? 60000
+  }
+
+  /** Called after a sync persists new quota figures, so readers can be notified. */
+  onSynced(listener: () => void): void {
+    this.listeners.push(listener)
   }
 
   async syncUsage(account: ManagedAccount, auth: KiroAuthDetails): Promise<void> {
@@ -43,6 +49,15 @@ export class UsageTracker {
     const u = await fetchUsageLimits(auth)
     updateAccountQuota(account, u, this.accountManager)
     await this.repository.batchSave(this.accountManager.getAccounts())
+    for (const listener of this.listeners) {
+      try {
+        listener()
+      } catch (e) {
+        logger.warn('Usage listener failed', {
+          error: e instanceof Error ? e.message : String(e)
+        })
+      }
+    }
   }
 
   private async syncWithRetry(

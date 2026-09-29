@@ -9,6 +9,8 @@ import { AccountManager } from './plugin/accounts.js'
 import { loadConfig } from './plugin/config/index.js'
 import * as logger from './plugin/logger.js'
 import { buildModelRegistry } from './plugin/model-registry.js'
+import { usageRpc } from './plugin/usage-rpc.js'
+import { aggregateUsage } from './plugin/usage.js'
 import { formatWebSearchResults, kiroWebSearch } from './plugin/web-search.js'
 
 type ToastFunction = (message: string, variant: string) => void
@@ -158,6 +160,21 @@ export const createKiroPlugin = (id: string): Plugin.Plugin => ({
     await ctx.aisdk.hook('language', (event) => {
       if (event.model.providerID !== id) return
       event.language = event.sdk.languageModel(String(event.model.modelID ?? event.model.id))
+    })
+
+    // The CLI plugin has no access to the account database, and OpenCode's own
+    // cost accounting cannot express credits against an allowance, so the quota
+    // is published over RPC for the footer indicator to read.
+    const usage = await ctx.rpc.register(usageRpc, {
+      get: async () => aggregateUsage(accountManager.getAccounts())
+    })
+
+    requestHandler.onUsageChange(() => {
+      void usage.events
+        .emit('updated', aggregateUsage(accountManager.getAccounts()))
+        .catch((e) =>
+          logger.debug(`Usage event emit failed: ${e instanceof Error ? e.message : String(e)}`)
+        )
     })
 
     const account = accountManager.getCurrentOrNext()

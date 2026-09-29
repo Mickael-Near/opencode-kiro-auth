@@ -1,5 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "include": ["src/**/*"],
-  "exclude": ["**/*.test.ts", "**/*.spec.ts"]
+  // src/tui.tsx ships as source: OpenCode applies the Solid JSX transform when it
+  // loads the CLI entrypoint, which tsc cannot reproduce.
+  "exclude": ["**/*.test.ts", "**/*.spec.ts", "src/tui.tsx"]
 }

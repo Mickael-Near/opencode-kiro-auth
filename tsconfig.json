@@ -4,6 +4,8 @@
     "target": "ESNext",
     "module": "Preserve",
     "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
     "types": ["bun-types", "node"],
     "strict": true,
     "esModuleInterop": true,
