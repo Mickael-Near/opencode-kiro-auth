@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   budgetToEffort,
-  getEffectiveEffort,
+  parseThinkingRequest,
   resolveEffort,
-  supportsEffort
+  resolveModelRequestFields,
+  supportsEffort,
+  supportsThinkingOff
 } from '../plugin/effort.js'
 import { activateCatalog, FALLBACK_CATALOG } from '../plugin/model-catalog.js'
 
@@ -37,13 +39,24 @@ describe('effort module', () => {
           rate: 6,
           limit: { context: 1000000, output: 128000 },
           input: ['text'],
-          effortLevels: ['low', 'high']
+          effortLevels: ['low', 'high'],
+          thinkingTypes: ['adaptive']
         }
       ])
 
       expect(supportsEffort('claude-fable-6.1')).toBe(true)
       expect(resolveEffort('claude-fable-6.1', 'max')).toBe('high')
+      expect(supportsThinkingOff('claude-fable-6.1')).toBe(false)
       expect(supportsEffort('claude-opus-5')).toBe(false)
+    })
+  })
+
+  describe('supportsThinkingOff', () => {
+    test('follows the disabled entry of the thinking.type enum', () => {
+      expect(supportsThinkingOff('claude-sonnet-4.6')).toBe(true)
+      expect(supportsThinkingOff('claude-opus-5')).toBe(true)
+      expect(supportsThinkingOff('claude-opus-5.5')).toBe(false)
+      expect(supportsThinkingOff('claude-haiku-4.5')).toBe(false)
     })
   })
 
@@ -97,30 +110,99 @@ describe('effort module', () => {
     })
   })
 
-  describe('getEffectiveEffort', () => {
-    test('returns undefined for unsupported models', () => {
-      expect(getEffectiveEffort('claude-haiku-4.5', true, 100000)).toBeUndefined()
+  describe('parseThinkingRequest', () => {
+    test('reads no variant as the provider default, not as off', () => {
+      expect(parseThinkingRequest('claude-opus-5', {})).toEqual({ kind: 'default' })
     })
 
-    test('uses explicit config when provided', () => {
-      expect(getEffectiveEffort('claude-opus-4.8', true, 20000, 'max')).toBe('max')
-      expect(getEffectiveEffort('claude-opus-4.8', false, 20000, 'high')).toBe('high')
+    test('reads a zero budget as the off variant', () => {
+      const body = { providerOptions: { thinkingConfig: { thinkingBudget: 0 } } }
+      expect(parseThinkingRequest('claude-opus-5', body)).toEqual({ kind: 'off' })
     })
 
-    test('returns undefined when not thinking and no config', () => {
-      expect(getEffectiveEffort('claude-opus-4.8', false, 20000)).toBeUndefined()
+    test('reads an effort variant from every budget field OpenCode may use', () => {
+      expect(
+        parseThinkingRequest('claude-opus-5', {
+          providerOptions: { thinkingConfig: { thinkingBudget: 65536 } }
+        })
+      ).toEqual({ kind: 'on', budget: 65536 })
+      expect(
+        parseThinkingRequest('claude-opus-5', { thinkingConfig: { thinkingBudget: 16384 } })
+      ).toEqual({ kind: 'on', budget: 16384 })
+      expect(
+        parseThinkingRequest('claude-opus-5', { thinkingConfig: { budget_tokens: 98304 } })
+      ).toEqual({ kind: 'on', budget: 98304 })
     })
 
-    test('uses budget mapping when thinking and auto-mapping enabled', () => {
-      expect(getEffectiveEffort('claude-opus-4.8', true, 128000, undefined, true)).toBe('max')
-      expect(getEffectiveEffort('claude-opus-4.8', true, 20000, undefined, true)).toBe('medium')
-      expect(getEffectiveEffort('claude-opus-5', true, 98304, undefined, true)).toBe('xhigh')
-      expect(getEffectiveEffort('claude-opus-5', true, 32768, undefined, true)).toBe('medium')
-      expect(getEffectiveEffort('claude-opus-5', true, 8192, undefined, true)).toBe('low')
+    // Sessions started on a retired `-thinking` ID keep thinking on.
+    test('keeps thinking on for retired -thinking IDs', () => {
+      expect(parseThinkingRequest('claude-opus-5-thinking', {})).toEqual({
+        kind: 'on',
+        budget: 20000
+      })
+    })
+  })
+
+  describe('resolveModelRequestFields', () => {
+    test('sends nothing without a variant, so Kiro applies its default', () => {
+      expect(resolveModelRequestFields('claude-sonnet-4.6', { kind: 'default' })).toBeUndefined()
+      expect(resolveModelRequestFields('claude-opus-5.5', { kind: 'default' })).toBeUndefined()
     })
 
-    test('falls back to medium when auto-mapping disabled', () => {
-      expect(getEffectiveEffort('claude-opus-4.8', true, 128000, undefined, false)).toBe('medium')
+    test('disables thinking where the model allows it', () => {
+      expect(resolveModelRequestFields('claude-sonnet-4.6', { kind: 'off' })).toEqual({
+        thinking: { type: 'disabled' }
+      })
+    })
+
+    // Kiro answers 400 to `disabled` on models that always reason.
+    test('sends nothing for off on models that cannot disable thinking', () => {
+      expect(resolveModelRequestFields('claude-opus-5.5', { kind: 'off' })).toBeUndefined()
+    })
+
+    // Sonnet only streams reasoning events when adaptive is sent with the effort.
+    test('turns on adaptive thinking at the selected effort', () => {
+      expect(resolveModelRequestFields('claude-sonnet-4.6', { kind: 'on', budget: 65536 })).toEqual(
+        { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } }
+      )
+      expect(resolveModelRequestFields('claude-opus-5.5', { kind: 'on', budget: 98304 })).toEqual({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'xhigh' }
+      })
+    })
+
+    test('sends nothing for models without a thinking schema', () => {
+      expect(
+        resolveModelRequestFields('claude-haiku-4.5', { kind: 'on', budget: 65536 })
+      ).toBeUndefined()
+      expect(resolveModelRequestFields('gpt-5.6-sol', { kind: 'off' })).toBeUndefined()
+    })
+
+    test('lets a configured effort override the variant level and the default', () => {
+      expect(
+        resolveModelRequestFields('claude-opus-4.8', { kind: 'on', budget: 16384 }, 'max')
+      ).toEqual({ thinking: { type: 'adaptive' }, output_config: { effort: 'max' } })
+      expect(resolveModelRequestFields('claude-opus-4.8', { kind: 'default' }, 'high')).toEqual({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' }
+      })
+    })
+
+    test('never lets a configured effort override an explicit off', () => {
+      expect(resolveModelRequestFields('claude-opus-4.8', { kind: 'off' }, 'max')).toEqual({
+        thinking: { type: 'disabled' }
+      })
+    })
+
+    test('falls back to medium when auto-mapping is disabled', () => {
+      expect(
+        resolveModelRequestFields(
+          'claude-opus-4.8',
+          { kind: 'on', budget: 128000 },
+          undefined,
+          false
+        )?.output_config
+      ).toEqual({ effort: 'medium' })
     })
   })
 })

@@ -2,12 +2,18 @@ import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-c
 import type { AccountRepository } from '../../infrastructure/database/account-repository'
 import type { AccountManager } from '../../plugin/accounts'
 import type { KiroConfig } from '../../plugin/config'
+import { parseThinkingRequest } from '../../plugin/effort'
 import { isPermanentError } from '../../plugin/health'
 import * as logger from '../../plugin/logger'
 import { transformToSdkRequest } from '../../plugin/request'
 import { createSdkClient } from '../../plugin/sdk-client'
 import { syncFromKiroCli } from '../../plugin/sync/kiro-cli'
-import type { KiroAuthDetails, ManagedAccount, SdkPreparedRequest } from '../../plugin/types'
+import type {
+  KiroAuthDetails,
+  ManagedAccount,
+  SdkPreparedRequest,
+  ThinkingRequest
+} from '../../plugin/types'
 import { AccountSelector } from '../account/account-selector'
 import { UsageTracker } from '../account/usage-tracker'
 import { TokenRefresher } from '../auth/token-refresher'
@@ -84,13 +90,7 @@ export class RequestHandler {
   ): Promise<Response> {
     const body = init?.body ? JSON.parse(init.body) : {}
     const model = this.extractModel(url) || body.model || 'claude-sonnet-4-5'
-    const think =
-      model.endsWith('-thinking') || !!body.providerOptions?.thinkingConfig || !!body.thinkingConfig
-    const budget =
-      body.providerOptions?.thinkingConfig?.thinkingBudget ||
-      body.thinkingConfig?.thinkingBudget ||
-      body.thinkingConfig?.budget_tokens ||
-      20000
+    const thinking = parseThinkingRequest(model, body)
 
     let retry = 0
     let bearerRetried = false
@@ -137,14 +137,14 @@ export class RequestHandler {
         continue
       }
 
-      const sdkPrep = this.prepareSdkRequest(init?.body, model, auth, think, budget, showToast)
+      const sdkPrep = this.prepareSdkRequest(init?.body, model, auth, thinking, showToast)
 
       const apiTimestamp = this.config.enable_log_api_request ? logger.getTimestamp() : null
       if (apiTimestamp) {
         this.logSdkRequest(sdkPrep, acc, apiTimestamp)
       }
       try {
-        const client = createSdkClient(auth, sdkPrep.region, sdkPrep.effort)
+        const client = createSdkClient(auth, sdkPrep.region, sdkPrep.modelRequestFields)
         const command = new GenerateAssistantResponseCommand({
           conversationState: sdkPrep.conversationState as any,
           profileArn: sdkPrep.profileArn
@@ -259,11 +259,10 @@ export class RequestHandler {
     body: any,
     model: string,
     auth: KiroAuthDetails,
-    think: boolean,
-    budget: number,
+    thinking: ThinkingRequest,
     showToast?: (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
   ): SdkPreparedRequest {
-    return transformToSdkRequest(body, model, auth, think, budget, showToast, {
+    return transformToSdkRequest(body, model, auth, thinking, showToast, {
       effort: this.config.effort,
       autoEffortMapping: this.config.auto_effort_mapping
     })
@@ -283,9 +282,7 @@ export class RequestHandler {
 
   private logSdkRequest(prep: SdkPreparedRequest, acc: ManagedAccount, timestamp: string): void {
     // Mirrors what the sdk-client middleware injects, so logs reflect the wire body.
-    const additionalModelRequestFields = prep.effort
-      ? { output_config: { effort: prep.effort } }
-      : undefined
+    const additionalModelRequestFields = prep.modelRequestFields
 
     logger.logApiRequest(
       {

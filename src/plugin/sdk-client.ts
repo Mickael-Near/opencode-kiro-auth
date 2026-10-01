@@ -1,15 +1,14 @@
 import { CodeWhispererStreamingClient } from '@aws/codewhisperer-streaming-client'
 import { KIRO_CONSTANTS } from '../constants.js'
-import type { Effort, KiroAuthDetails } from './types'
+import type { KiroAuthDetails, ModelRequestFields } from './types'
 
 /**
- * Cache key includes effort to ensure separate clients for different effort levels,
- * since middleware is configured at client creation time.
+ * Cache key includes the model request fields to ensure separate clients per
+ * thinking setting, since middleware is configured at client creation time.
  */
 interface ClientCacheEntry {
   client: CodeWhispererStreamingClient
   token: string
-  effort?: Effort
 }
 
 const clientCache = new Map<string, ClientCacheEntry>()
@@ -18,12 +17,13 @@ const KIRO_CLI_MAX_ATTEMPTS = 3
 export function createSdkClient(
   auth: KiroAuthDetails,
   region: string,
-  effort?: Effort
+  modelRequestFields?: ModelRequestFields
 ): CodeWhispererStreamingClient {
-  const cacheKey = `${region}:${auth.email || 'default'}:${effort || 'none'}`
+  const fieldsKey = modelRequestFields ? JSON.stringify(modelRequestFields) : 'none'
+  const cacheKey = `${region}:${auth.email || 'default'}:${fieldsKey}`
   const cached = clientCache.get(cacheKey)
 
-  if (cached && cached.token === auth.access && cached.effort === effort) {
+  if (cached && cached.token === auth.access) {
     return cached.client
   }
 
@@ -46,8 +46,8 @@ export function createSdkClient(
     { step: 'build', name: 'addKiroHeaders' }
   )
 
-  // Inject additionalModelRequestFields for effort-based thinking control
-  if (effort) {
+  // Inject additionalModelRequestFields for thinking control
+  if (modelRequestFields) {
     client.middlewareStack.add(
       (next: any) => async (args: any) => {
         // The SDK serializes input to args.input, we need to modify the body
@@ -55,11 +55,7 @@ export function createSdkClient(
         if (args.request?.body) {
           try {
             const body = JSON.parse(args.request.body)
-            body.additionalModelRequestFields = {
-              output_config: {
-                effort
-              }
-            }
+            body.additionalModelRequestFields = modelRequestFields
             args.request.body = JSON.stringify(body)
           } catch {
             // If body parsing fails, continue without modification
@@ -67,11 +63,11 @@ export function createSdkClient(
         }
         return next(args)
       },
-      { step: 'build', name: 'addEffortConfig', priority: 'high' }
+      { step: 'build', name: 'addModelRequestFields', priority: 'high' }
     )
   }
 
-  clientCache.set(cacheKey, { client, token, effort })
+  clientCache.set(cacheKey, { client, token })
   return client
 }
 

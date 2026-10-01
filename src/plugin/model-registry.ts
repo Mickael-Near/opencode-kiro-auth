@@ -1,69 +1,70 @@
 import { Model, Provider } from '@opencode/plugin'
-import { THINKING_BUDGETS } from './effort.js'
+import { THINKING_BUDGETS, THINKING_OFF_BUDGET } from './effort.js'
 import { getCatalog, type KiroModel } from './model-catalog.js'
-import { THINKING_SUFFIX, toOpenCodeModelID } from './models.js'
+import { toOpenCodeModelID } from './models.js'
+
+const OFF_VARIANT = 'off'
 
 /**
  * Model definitions advertised to OpenCode, derived from the Kiro catalog.
  *
  * Every model Kiro lists is advertised as-is, including the ones it added after
- * this plugin shipped. Models that declare an `output_config.effort` schema also
- * get a `-thinking` companion whose variants mirror the effort levels Kiro
- * accepts for that model.
+ * this plugin shipped. Thinking is a variant of the model rather than a separate
+ * entry: picking no variant leaves Kiro's per-model default in place, an effort
+ * variant turns on adaptive thinking at that level, and `off` disables thinking
+ * on models Kiro lets switch it off.
  *
- * `-thinking` entries declare `compatibility.reasoningField`. The plugin streams
- * reasoning as the non-standard `reasoning_content` delta (see
+ * Thinking-capable models declare `compatibility.reasoningField`. The plugin
+ * streams reasoning as the non-standard `reasoning_content` delta (see
  * streaming/openai-converter.ts), so OpenCode has to be told which field carries
  * it. Without it, every reasoning chunk is silently dropped and no thinking
- * block is rendered.
+ * block is rendered. It goes on the base entry because some models (the Opus
+ * family) reason by default, with no variant selected.
  */
 export function buildModelRegistry(providerID: string): Model.Info[] {
   const provider = Provider.ID.make(providerID)
-  const models: Model.Info[] = []
-
-  for (const model of getCatalog()) {
-    models.push(createModel(provider, model, false))
-
-    if (model.effortLevels.length > 0) {
-      models.push(createModel(provider, model, true))
-    }
-  }
-
-  return models
+  return getCatalog().map((model) => createModel(provider, model))
 }
 
-function createModel(providerID: Provider.ID, model: KiroModel, thinking: boolean): Model.Info {
-  const modelID = toOpenCodeModelID(model.id) + (thinking ? THINKING_SUFFIX : '')
-  const suffix = `${thinking ? ' Thinking' : ''} (${formatRate(model.rate)})`
+function createModel(providerID: Provider.ID, model: KiroModel): Model.Info {
+  const variants = buildVariants(model)
 
   return {
-    ...Model.Info.default(providerID, Model.ID.make(modelID)),
-    name: `${model.name}${suffix}`,
+    ...Model.Info.default(providerID, Model.ID.make(toOpenCodeModelID(model.id))),
+    name: `${model.name} (${formatRate(model.rate)})`,
     limit: { ...model.limit },
     capabilities: {
       tools: true,
       input: [...model.input],
       output: ['text']
     },
-    ...(thinking
+    ...(variants.length > 0
       ? {
           compatibility: { reasoningField: 'reasoning_content' as const },
-          variants: buildVariants(model)
+          variants
         }
       : {})
   }
 }
 
 /**
- * Build one variant per effort level the model accepts, ordered lowest to
- * highest. The budget travels as a request body field, which the Kiro request
- * builder maps back to the matching `output_config.effort`.
+ * `off` first when the model accepts `thinking.type: disabled`, then one variant
+ * per effort level, lowest to highest. The budget travels as a request body
+ * field, which the Kiro request builder maps back to the matching request
+ * fields.
  */
 function buildVariants(model: KiroModel): Model.Variant[] {
-  return model.effortLevels.map((level) => ({
-    id: Model.VariantID.make(level),
-    settings: { thinkingConfig: { thinkingBudget: THINKING_BUDGETS[level] } }
-  }))
+  const off = model.thinkingTypes.includes('disabled')
+    ? [variant(OFF_VARIANT, THINKING_OFF_BUDGET)]
+    : []
+  return [...off, ...model.effortLevels.map((level) => variant(level, THINKING_BUDGETS[level]))]
+}
+
+function variant(id: string, thinkingBudget: number): Model.Variant {
+  return {
+    id: Model.VariantID.make(id),
+    settings: { thinkingConfig: { thinkingBudget } }
+  }
 }
 
 /** Kiro credit multiplier as it appears in the picker: 1 → `1.0x`, 0.25 → `0.25x`. */

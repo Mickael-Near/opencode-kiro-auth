@@ -1,5 +1,6 @@
 import { EFFORT_LEVELS, type Effort } from './config/schema'
-import { findCatalogModel } from './models.js'
+import { findCatalogModel, THINKING_SUFFIX } from './models.js'
+import type { ModelRequestFields, ThinkingRequest } from './types'
 
 /**
  * Reference thinking budget for each effort level.
@@ -89,40 +90,83 @@ export function budgetToEffort(budget: number, kiroModel: string): Effort | unde
 }
 
 /**
- * Get the effective effort level based on config, budget, and model.
- *
- * Priority:
- * 1. Explicit effort config (if set) - always applied regardless of thinking state
- * 2. Budget-to-effort mapping (if auto_effort_mapping enabled and thinking)
- * 3. 'medium' default (if thinking enabled)
- * 4. undefined (if not thinking)
+ * Budget of the `off` variant. Zero is the conventional "no thinking" budget,
+ * and sits below every band, so it cannot be mistaken for an effort level.
  */
-export function getEffectiveEffort(
+export const THINKING_OFF_BUDGET = 0
+
+/** Budget assumed for a legacy `-thinking` model ID used without a variant. */
+const DEFAULT_THINKING_BUDGET = 20000
+
+/**
+ * What the user asked for, read from the OpenCode request body.
+ *
+ * No variant means "default", not "off": OpenCode leaves the choice to the
+ * provider, and Kiro's own default differs per model (Opus reasons, Sonnet does
+ * not), so the plugin must not override it.
+ */
+export function parseThinkingRequest(model: string, body: any): ThinkingRequest {
+  const config = body?.providerOptions?.thinkingConfig ?? body?.thinkingConfig
+  const budget = config?.thinkingBudget ?? config?.budget_tokens
+
+  if (budget === THINKING_OFF_BUDGET) return { kind: 'off' }
+  if (typeof budget === 'number') return { kind: 'on', budget }
+  if (config || model.endsWith(THINKING_SUFFIX)) {
+    return { kind: 'on', budget: DEFAULT_THINKING_BUDGET }
+  }
+  return { kind: 'default' }
+}
+
+/**
+ * Check if thinking can be switched off for a model. Kiro declares it by listing
+ * `disabled` in the model's `thinking.type` enum.
+ */
+export function supportsThinkingOff(kiroModel: string): boolean {
+  return findCatalogModel(kiroModel)?.thinkingTypes.includes('disabled') ?? false
+}
+
+/**
+ * Build the `additionalModelRequestFields` for a request, or undefined to let
+ * Kiro apply the model's defaults.
+ *
+ * - off: `thinking.type: disabled` where the model accepts it. Models that
+ *   always reason get nothing rather than a request Kiro would reject with 400.
+ * - on: adaptive thinking at the selected effort. Sonnet only streams its
+ *   reasoning when `thinking.type: adaptive` is sent; effort alone is not enough.
+ * - default: nothing, unless the config pins an effort level.
+ *
+ * An explicit `effort` in the config overrides the variant's level, but never
+ * an explicit `off`.
+ */
+export function resolveModelRequestFields(
   kiroModel: string,
-  thinking: boolean,
-  budget: number,
+  request: ThinkingRequest,
   configEffort?: Effort,
   autoEffortMapping = true
+): ModelRequestFields | undefined {
+  if (request.kind === 'off') {
+    return supportsThinkingOff(kiroModel) ? { thinking: { type: 'disabled' } } : undefined
+  }
+
+  const effort = requestedEffort(kiroModel, request, configEffort, autoEffortMapping)
+  if (!effort) return undefined
+
+  const adaptive = findCatalogModel(kiroModel)?.thinkingTypes.includes('adaptive')
+  return {
+    ...(adaptive ? { thinking: { type: 'adaptive' as const } } : {}),
+    output_config: { effort }
+  }
+}
+
+function requestedEffort(
+  kiroModel: string,
+  request: ThinkingRequest,
+  configEffort: Effort | undefined,
+  autoEffortMapping: boolean
 ): Effort | undefined {
-  if (!supportsEffort(kiroModel)) {
-    return undefined
-  }
-
-  // Explicit config takes precedence - always applied even without thinking
-  if (configEffort) {
-    return resolveEffort(kiroModel, configEffort)
-  }
-
-  // If not thinking, no effort needed
-  if (!thinking) {
-    return undefined
-  }
-
-  // Auto-map budget to effort
-  if (autoEffortMapping) {
-    return budgetToEffort(budget, kiroModel)
-  }
-
-  // Default to medium when thinking without auto-mapping
-  return resolveEffort(kiroModel, 'medium')
+  if (configEffort) return resolveEffort(kiroModel, configEffort)
+  if (request.kind !== 'on') return undefined
+  return autoEffortMapping
+    ? budgetToEffort(request.budget, kiroModel)
+    : resolveEffort(kiroModel, 'medium')
 }

@@ -43,9 +43,8 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 ```
 
 That is the whole configuration. On startup the plugin asks Kiro which models your
-account can use, then registers the `kiro` provider with all of them, including a
-`-thinking` companion for each model that supports reasoning effort. Run `/models`
-to pick one.
+account can use, then registers the `kiro` provider with all of them, one entry per
+model. Run `/models` to pick one.
 
 Because the list comes from the account, it reflects your plan and region: a Pro
 account sees models a free Builder ID account does not. Anything Kiro adds to your
@@ -60,24 +59,41 @@ floor rather than the source of truth, so it goes stale between releases.
 
 Model IDs drop the dots OpenCode does not allow: Kiro's `claude-opus-5.5` is
 advertised as `claude-opus-5-5`. Kiro folded its 1M variants into the base models,
-and the retired `-1m` IDs still resolve, so existing configs keep working.
+and the retired `-1m` and `-thinking` IDs still resolve, so existing configs and
+sessions keep working.
 
 Defining `providers.kiro.models` yourself replaces the discovered list entirely, and
 with it the automatic updates. Only do that to rename or restrict models, and see
-the reasoning flags below if any of them are `-thinking` models.
+the reasoning flags below for any model that thinks.
 
 ### Thinking Effort Configuration
 
-Every effort-capable model gets a `-thinking` companion, already carrying the
-reasoning flags and an effort ladder as variants. Nothing to configure: pick a
-`-thinking` model and cycle its variants to change reasoning depth.
+Thinking is a variant of the model, not a separate entry. Cycle a model's variants
+to choose how it reasons:
 
-Which models are effort-capable, and which levels each one offers, comes from the
-model's own schema in Kiro's model list rather than a fixed list in the plugin. A
-model's ladder is exactly the `output_config.effort` enum Kiro declares for it.
+| Variant         | Sent to Kiro                                               |
+| --------------- | ---------------------------------------------------------- |
+| none selected   | nothing: Kiro applies the model's own default              |
+| `off`           | `thinking.type: disabled`                                  |
+| `low` ... `max` | `thinking.type: adaptive` with that `output_config.effort` |
 
-Each `-thinking` entry declares the compatibility override OpenCode needs in order
-to render reasoning:
+With no variant selected the plugin sends nothing, because Kiro's default differs
+by model: the Opus family reasons out of the box, while Sonnet and the 4.5
+generation answer directly. Overriding that silently would change behaviour you did
+not ask for.
+
+Which variants a model offers comes from its schema in Kiro's model list rather
+than a fixed list in the plugin. The effort ladder is exactly the
+`output_config.effort` enum Kiro declares for the model, and `off` only appears
+when its `thinking.type` enum includes `disabled`. Opus 5.5 always reasons, so it
+has no `off` variant.
+
+Effort variants send `thinking.type: adaptive` alongside the effort because effort
+alone does not make Sonnet stream its reasoning: without it, Sonnet writes its
+reasoning into the answer text instead of the thinking block.
+
+Every thinking-capable model declares the compatibility override OpenCode needs in
+order to render reasoning:
 
 ```json
 {
@@ -90,9 +106,9 @@ non-standard `reasoning_content` delta this plugin emits. If it is missing,
 OpenCode silently drops every reasoning chunk and no thinking block appears.
 
 If you override `providers.kiro.models` in your own config, you replace the
-plugin's registry wholesale — copy `compatibility.reasoningField` and the
-`capabilities` block onto any `-thinking` model you define, or reasoning will
-stop rendering.
+plugin's registry wholesale — copy `compatibility.reasoningField`, the
+`capabilities` block and the variants onto any thinking model you define, or
+reasoning will stop rendering.
 
 Reasoning itself comes from the API: Kiro streams `reasoningContentEvent` on
 thinking models, and the plugin forwards each one as a `reasoning_content` delta.
@@ -100,25 +116,29 @@ Nothing needs to be enabled for that. Models that instead inline reasoning as
 `<thinking>` tags in their answer are still handled, via a fallback scraper.
 
 Variants set `settings.thinkingConfig.thinkingBudget`, which the plugin maps to
-Kiro's native `effort` field. Bands are scaled to Kiro's real thinking ceiling
-(1024-128000 on the deepest models), so every effort level including `xhigh` is
-reachable from a budget alone:
+Kiro's native fields. A budget of `0` is the `off` variant. Other bands are scaled
+to Kiro's real thinking ceiling (1024-128000 on the deepest models), so every
+effort level including `xhigh` is reachable from a budget alone:
 
-| OpenCode budget | Kiro effort |
-| --------------- | ----------- |
-| `<= 16384` | `low` |
-| `<= 32768` | `medium` |
-| `<= 65536` | `high` |
-| `<= 98304` | `xhigh` |
-| `> 98304` | `max` |
+| OpenCode budget | Kiro effort       |
+| --------------- | ----------------- |
+| `0`             | thinking disabled |
+| `<= 16384`      | `low`             |
+| `<= 32768`      | `medium`          |
+| `<= 65536`      | `high`            |
+| `<= 98304`      | `xhigh`           |
+| `> 98304`       | `max`             |
 
 Not every model accepts every level: `xhigh` in particular is limited to the deepest
 models, and which those are changes as Kiro ships models. A budget landing in a band
 the model rejects is clamped to the deepest level it does accept.
 
+Setting `effort` in `kiro.json` pins that level on every request to a thinking
+model, including ones with no variant selected. An explicit `off` still wins.
+
 Kiro's GPT-5.6 tiers are advertised like any other model, but they configure
 reasoning through `reasoning.effort` / `reasoning.mode` instead of
-`output_config.effort`, so they get no `-thinking` companion.
+`output_config.effort`, so they get no thinking variants.
 
 Use `~/.config/opencode/kiro.json` for plugin-wide behavior such as auth sync,
 account selection, retry limits, and `auto_effort_mapping`. A top-level `effort`

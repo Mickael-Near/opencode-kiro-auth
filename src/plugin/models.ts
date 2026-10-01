@@ -1,6 +1,9 @@
 import { getCatalog, getCatalogModel, type KiroModel } from './model-catalog.js'
 
-/** Suffix marking the reasoning companion of an effort-capable model. */
+/**
+ * Suffix of the retired `-thinking` model IDs. Thinking is now a variant of the
+ * base model; the suffix is still accepted so existing sessions keep resolving.
+ */
 export const THINKING_SUFFIX = '-thinking'
 
 /**

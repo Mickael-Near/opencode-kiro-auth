@@ -1,7 +1,7 @@
 import { buildUrl, extractRegionFromArn, KIRO_CONSTANTS } from '../constants.js'
 import { EFFORT_LEVELS, type Effort } from './config/schema.js'
 import * as logger from './logger.js'
-import type { KiroAuthDetails } from './types'
+import type { KiroAuthDetails, ThinkingType } from './types'
 
 // Plugin setup waits on this call, so the ceiling is what a user tolerates
 // before the model picker is usable, not what the network might need.
@@ -34,11 +34,21 @@ export interface KiroModel {
    * declare no request-field schema, which is how Kiro marks "no thinking".
    */
   effortLevels: readonly Effort[]
+  /**
+   * Values Kiro accepts in `thinking.type`. Only models listing `disabled` can
+   * have thinking switched off; Opus 5.5, for one, always reasons.
+   */
+  thinkingTypes: readonly ThinkingType[]
 }
+
+const THINKING_TYPES: readonly ThinkingType[] = ['adaptive', 'disabled']
 
 const NO_EFFORT: readonly Effort[] = []
 const FULL_EFFORT = EFFORT_LEVELS
 const EFFORT_WITHOUT_XHIGH = EFFORT_LEVELS.filter((level) => level !== 'xhigh')
+const NO_THINKING: readonly ThinkingType[] = []
+const ADAPTIVE_ONLY: readonly ThinkingType[] = ['adaptive']
+const ADAPTIVE_OR_DISABLED = THINKING_TYPES
 const TEXT: readonly Modality[] = ['text']
 const TEXT_IMAGE: readonly Modality[] = ['text', 'image']
 
@@ -61,7 +71,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 1.0,
     limit: CONTEXT_1M_SHORT_OUTPUT,
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'claude-opus-5.5',
@@ -69,7 +80,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 2.0,
     limit: CONTEXT_1M,
     input: TEXT_IMAGE,
-    effortLevels: FULL_EFFORT
+    effortLevels: FULL_EFFORT,
+    thinkingTypes: ADAPTIVE_ONLY
   },
   {
     id: 'claude-opus-5',
@@ -77,7 +89,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 2.2,
     limit: CONTEXT_1M,
     input: TEXT_IMAGE,
-    effortLevels: FULL_EFFORT
+    effortLevels: FULL_EFFORT,
+    thinkingTypes: ADAPTIVE_OR_DISABLED
   },
   {
     id: 'claude-sonnet-5',
@@ -85,7 +98,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 1.3,
     limit: CONTEXT_1M_SHORT_OUTPUT,
     input: TEXT_IMAGE,
-    effortLevels: FULL_EFFORT
+    effortLevels: FULL_EFFORT,
+    thinkingTypes: ADAPTIVE_OR_DISABLED
   },
   {
     id: 'claude-opus-4.8',
@@ -93,7 +107,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 2.2,
     limit: CONTEXT_1M,
     input: TEXT_IMAGE,
-    effortLevels: FULL_EFFORT
+    effortLevels: FULL_EFFORT,
+    thinkingTypes: ADAPTIVE_OR_DISABLED
   },
   {
     id: 'gpt-5.6-sol',
@@ -101,7 +116,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 4.4,
     limit: CONTEXT_1M,
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'gpt-5.6-terra',
@@ -109,7 +125,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 2.2,
     limit: CONTEXT_1M,
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'gpt-5.6-luna',
@@ -117,7 +134,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 0.6,
     limit: CONTEXT_1M,
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'claude-opus-4.7',
@@ -125,7 +143,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 2.2,
     limit: CONTEXT_1M,
     input: TEXT_IMAGE,
-    effortLevels: FULL_EFFORT
+    effortLevels: FULL_EFFORT,
+    thinkingTypes: ADAPTIVE_OR_DISABLED
   },
   {
     id: 'claude-opus-4.6',
@@ -133,7 +152,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 2.2,
     limit: CONTEXT_1M_SHORT_OUTPUT,
     input: TEXT_IMAGE,
-    effortLevels: EFFORT_WITHOUT_XHIGH
+    effortLevels: EFFORT_WITHOUT_XHIGH,
+    thinkingTypes: ADAPTIVE_OR_DISABLED
   },
   {
     id: 'claude-sonnet-4.6',
@@ -141,7 +161,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 1.3,
     limit: CONTEXT_1M_SHORT_OUTPUT,
     input: TEXT_IMAGE,
-    effortLevels: EFFORT_WITHOUT_XHIGH
+    effortLevels: EFFORT_WITHOUT_XHIGH,
+    thinkingTypes: ADAPTIVE_OR_DISABLED
   },
   {
     id: 'claude-opus-4.5',
@@ -149,7 +170,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 2.2,
     limit: CONTEXT_200K,
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'claude-sonnet-4.5',
@@ -157,7 +179,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 1.3,
     limit: CONTEXT_200K,
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'claude-sonnet-4',
@@ -165,7 +188,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 1.3,
     limit: CONTEXT_200K,
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'claude-haiku-4.5',
@@ -173,7 +197,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 0.4,
     limit: CONTEXT_200K,
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'deepseek-3.2',
@@ -181,7 +206,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 0.25,
     limit: { context: 164000, output: DEFAULT_OUTPUT },
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'minimax-m2.5',
@@ -189,7 +215,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 0.25,
     limit: { context: 196000, output: DEFAULT_OUTPUT },
     input: TEXT,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'minimax-m2.1',
@@ -197,7 +224,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 0.15,
     limit: { context: 196000, output: DEFAULT_OUTPUT },
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'glm-5',
@@ -205,7 +233,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 0.5,
     limit: CONTEXT_200K,
     input: TEXT,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   },
   {
     id: 'qwen3-coder-next',
@@ -213,7 +242,8 @@ export const FALLBACK_CATALOG: readonly KiroModel[] = [
     rate: 0.05,
     limit: { context: 256000, output: DEFAULT_OUTPUT },
     input: TEXT_IMAGE,
-    effortLevels: NO_EFFORT
+    effortLevels: NO_EFFORT,
+    thinkingTypes: NO_THINKING
   }
 ]
 
@@ -270,6 +300,7 @@ interface AvailableModel {
   supportedInputTypes?: string[]
   additionalModelRequestFieldsSchema?: {
     properties?: {
+      thinking?: { properties?: { type?: { enum?: string[] } } }
       output_config?: { properties?: { effort?: { enum?: string[] } } }
     }
   } | null
@@ -311,6 +342,7 @@ async function fetchCatalog(auth: KiroAuthDetails): Promise<readonly KiroModel[]
 function parseModel(raw: AvailableModel): KiroModel | undefined {
   const id = raw.modelId
   if (typeof id !== 'string' || id.length === 0) return undefined
+  const schema = raw.additionalModelRequestFieldsSchema?.properties
 
   return {
     id,
@@ -321,9 +353,8 @@ function parseModel(raw: AvailableModel): KiroModel | undefined {
       output: raw.tokenLimits?.maxOutputTokens || DEFAULT_OUTPUT
     },
     input: parseModalities(raw.supportedInputTypes),
-    effortLevels: parseEffortLevels(
-      raw.additionalModelRequestFieldsSchema?.properties?.output_config?.properties?.effort?.enum
-    )
+    effortLevels: parseKnown(schema?.output_config?.properties?.effort?.enum, EFFORT_LEVELS),
+    thinkingTypes: parseKnown(schema?.thinking?.properties?.type?.enum, THINKING_TYPES)
   }
 }
 
@@ -337,9 +368,12 @@ function parseModalities(types: string[] | undefined): readonly Modality[] {
   return modalities.length > 0 ? modalities : TEXT
 }
 
-/** Keep only levels the plugin knows, ordered lowest to highest. */
-function parseEffortLevels(levels: string[] | undefined): readonly Effort[] {
-  if (!levels) return NO_EFFORT
-  const accepted = new Set(levels)
-  return EFFORT_LEVELS.filter((level) => accepted.has(level))
+/**
+ * Keep only the values the plugin knows, in `known` order. For effort that is
+ * lowest to highest, which resolveEffort relies on.
+ */
+function parseKnown<T extends string>(values: string[] | undefined, known: readonly T[]): T[] {
+  if (!values) return []
+  const accepted = new Set(values)
+  return known.filter((value) => accepted.has(value))
 }

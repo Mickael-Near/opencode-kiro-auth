@@ -17,19 +17,20 @@ import {
   createToolNameRegistry,
   deduplicateToolResults
 } from '../infrastructure/transformers/tool-transformer.js'
-import { getEffectiveEffort } from './effort.js'
+import { resolveModelRequestFields } from './effort.js'
 import {
   convertImagesToKiroFormat,
   extractAllImages,
   extractTextFromParts
 } from './image-handler.js'
-import { resolveKiroModel } from './models.js'
+import { findCatalogModel, resolveKiroModel } from './models.js'
 import type {
   CodeWhispererRequest,
   Effort,
   KiroAuthDetails,
   PreparedRequest,
   SdkPreparedRequest,
+  ThinkingRequest,
   ToolNameMap
 } from './types'
 
@@ -344,25 +345,28 @@ export function transformToSdkRequest(
   body: any,
   model: string,
   auth: KiroAuthDetails,
-  think = false,
-  budget = 20000,
+  thinking: ThinkingRequest = { kind: 'default' },
   showToast?: ToastFunction,
   effortConfig?: EffortConfig
 ): SdkPreparedRequest {
+  const resolvedModel = resolveKiroModel(model)
+  // Models with a native thinking schema are steered through
+  // additionalModelRequestFields. The <thinking_mode> prompt prefix is only a
+  // fallback for models without one: on native models it makes Sonnet inline
+  // its reasoning as text instead of streaming it as reasoning events.
+  const promptThinking = thinking.kind === 'on' && !hasNativeThinking(resolvedModel)
   const { request, resolved, convId, toolNameMap } = buildCodeWhispererRequest(
     body,
     model,
     auth,
-    think,
-    budget,
+    promptThinking,
+    thinking.kind === 'on' ? thinking.budget : undefined,
     showToast
   )
 
-  // Resolve effort level based on config and model capabilities
-  const effort = getEffectiveEffort(
+  const modelRequestFields = resolveModelRequestFields(
     resolved,
-    think,
-    budget,
+    thinking,
     effortConfig?.effort,
     effortConfig?.autoEffortMapping ?? true
   )
@@ -375,6 +379,11 @@ export function transformToSdkRequest(
     conversationId: convId,
     region: extractRegionFromArn(auth.profileArn) ?? auth.region,
     toolNameMap,
-    effort
+    modelRequestFields
   }
+}
+
+function hasNativeThinking(kiroModel: string): boolean {
+  const model = findCatalogModel(kiroModel)
+  return !!model && (model.effortLevels.length > 0 || model.thinkingTypes.length > 0)
 }

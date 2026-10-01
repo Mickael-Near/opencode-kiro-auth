@@ -1,7 +1,11 @@
 import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-client'
 import { describe, expect, test } from 'bun:test'
 import { clearSdkClientCache, createSdkClient } from '../plugin/sdk-client'
-import type { KiroAuthDetails } from '../plugin/types'
+import type { Effort, KiroAuthDetails, ModelRequestFields } from '../plugin/types'
+
+function adaptive(effort: Effort): ModelRequestFields {
+  return { thinking: { type: 'adaptive' }, output_config: { effort } }
+}
 
 function auth(): KiroAuthDetails {
   return {
@@ -67,19 +71,20 @@ describe('SDK client', () => {
     clearSdkClientCache()
   })
 
-  test('injects effort before content-length is computed', async () => {
+  test('injects model request fields before content-length is computed', async () => {
     clearSdkClientCache()
 
-    const client = createSdkClient(auth(), 'us-east-1', 'max')
+    const fields = adaptive('max')
+    const client = createSdkClient(auth(), 'us-east-1', fields)
     const { body, request } = await captureRequest(client)
 
-    expect(body.additionalModelRequestFields.output_config.effort).toBe('max')
+    expect(body.additionalModelRequestFields).toEqual(fields)
     expect(Number(request.headers['content-length'])).toBe(Buffer.byteLength(request.bodyText))
 
     clearSdkClientCache()
   })
 
-  test('omits additionalModelRequestFields when no effort is set', async () => {
+  test('omits additionalModelRequestFields when none are set', async () => {
     clearSdkClientCache()
 
     const client = createSdkClient(auth(), 'us-east-1')
@@ -90,26 +95,27 @@ describe('SDK client', () => {
     clearSdkClientCache()
   })
 
-  test('injects xhigh, the level that was previously unreachable', async () => {
+  test('injects thinking disabled without an effort', async () => {
     clearSdkClientCache()
 
-    const client = createSdkClient(auth(), 'us-east-1', 'xhigh')
-    const { body, request } = await captureRequest(client)
+    const client = createSdkClient(auth(), 'us-east-1', { thinking: { type: 'disabled' } })
+    const { body } = await captureRequest(client)
 
-    expect(body.additionalModelRequestFields.output_config.effort).toBe('xhigh')
-    expect(Number(request.headers['content-length'])).toBe(Buffer.byteLength(request.bodyText))
+    expect(body.additionalModelRequestFields).toEqual({ thinking: { type: 'disabled' } })
 
     clearSdkClientCache()
   })
 
-  test('does not reuse a cached client across different effort levels', () => {
+  test('does not reuse a cached client across different request fields', () => {
     clearSdkClientCache()
 
-    const max = createSdkClient(auth(), 'us-east-1', 'max')
-    const xhigh = createSdkClient(auth(), 'us-east-1', 'xhigh')
-    const maxAgain = createSdkClient(auth(), 'us-east-1', 'max')
+    const max = createSdkClient(auth(), 'us-east-1', adaptive('max'))
+    const xhigh = createSdkClient(auth(), 'us-east-1', adaptive('xhigh'))
+    const off = createSdkClient(auth(), 'us-east-1', { thinking: { type: 'disabled' } })
+    const maxAgain = createSdkClient(auth(), 'us-east-1', adaptive('max'))
 
     expect(xhigh).not.toBe(max)
+    expect(off).not.toBe(max)
     expect(maxAgain).toBe(max)
 
     clearSdkClientCache()

@@ -29,6 +29,7 @@ function availableModel(overrides: Record<string, unknown> = {}) {
     tokenLimits: { maxInputTokens: 1000000, maxOutputTokens: 128000 },
     additionalModelRequestFieldsSchema: {
       properties: {
+        thinking: { properties: { type: { enum: ['adaptive'] } } },
         output_config: {
           properties: { effort: { enum: ['low', 'medium', 'high', 'xhigh', 'max'] } }
         }
@@ -75,6 +76,14 @@ describe('fallback catalog', () => {
     expect(getCatalogModel('claude-sonnet-4.5')?.effortLevels).toEqual([])
     expect(getCatalogModel('claude-haiku-4.5')?.effortLevels).toEqual([])
   })
+
+  // Mirrors each model's `thinking.type` enum in the ListAvailableModels snapshot.
+  test('records the thinking types each model declares', () => {
+    expect(getCatalogModel('claude-opus-5.5')?.thinkingTypes).toEqual(['adaptive'])
+    expect(getCatalogModel('claude-opus-5')?.thinkingTypes).toEqual(['adaptive', 'disabled'])
+    expect(getCatalogModel('claude-sonnet-4.6')?.thinkingTypes).toEqual(['adaptive', 'disabled'])
+    expect(getCatalogModel('claude-haiku-4.5')?.thinkingTypes).toEqual([])
+  })
 })
 
 describe('loadCatalog', () => {
@@ -99,8 +108,30 @@ describe('loadCatalog', () => {
       rate: 2.0,
       limit: { context: 1000000, output: 128000 },
       input: ['text', 'image'],
-      effortLevels: ['low', 'medium', 'high', 'xhigh', 'max']
+      effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+      thinkingTypes: ['adaptive']
     })
+  })
+
+  test('reads which thinking types the model accepts', async () => {
+    await withFetch(
+      () =>
+        jsonResponse({
+          models: [
+            availableModel({
+              modelId: 'claude-sonnet-4.6',
+              additionalModelRequestFieldsSchema: {
+                properties: {
+                  thinking: { properties: { type: { enum: ['disabled', 'adaptive', 'eager'] } } }
+                }
+              }
+            })
+          ]
+        }),
+      () => loadCatalog(async () => makeAuth())
+    )
+
+    expect(getCatalogModel('claude-sonnet-4.6')?.thinkingTypes).toEqual(['adaptive', 'disabled'])
   })
 
   // Kiro rejects this endpoint with 403 "Your subscription does not support this
@@ -158,7 +189,8 @@ describe('loadCatalog', () => {
         rate: 1,
         limit: { context: 200000, output: 64000 },
         input: ['text'],
-        effortLevels: []
+        effortLevels: [],
+        thinkingTypes: []
       })
     })
 

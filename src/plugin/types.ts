@@ -124,8 +124,26 @@ export interface SdkPreparedRequest {
   conversationId: string
   region: string
   toolNameMap?: ToolNameMap
-  /** Resolved effort level for thinking models */
-  effort?: Effort
+  /** Thinking controls sent as `additionalModelRequestFields`, if any. */
+  modelRequestFields?: ModelRequestFields
+}
+
+/**
+ * The thinking choice carried by an OpenCode request: no variant selected, the
+ * `off` variant, or an effort variant expressed as a thinking budget.
+ */
+export type ThinkingRequest = { kind: 'default' } | { kind: 'off' } | { kind: 'on'; budget: number }
+
+/** Values Kiro accepts in `thinking.type`, depending on the model. */
+export type ThinkingType = 'adaptive' | 'disabled'
+
+/**
+ * The subset of Kiro's `additionalModelRequestFields` the plugin sends. Omitted
+ * entirely when the user picked no variant, so Kiro applies its own defaults.
+ */
+export interface ModelRequestFields {
+  thinking?: { type: ThinkingType }
+  output_config?: { effort: Effort }
 }
 
 export type AccountSelectionStrategy = 'sticky' | 'round-robin' | 'lowest-usage'
