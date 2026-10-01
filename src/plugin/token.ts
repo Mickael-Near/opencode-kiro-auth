@@ -1,6 +1,35 @@
-import { decodeRefreshToken, encodeRefreshToken } from '../kiro/auth'
+import { accessTokenExpired, decodeRefreshToken, encodeRefreshToken } from '../kiro/auth'
+import type { AccountManager } from './accounts'
 import { KiroTokenRefreshError } from './errors'
-import type { KiroAuthDetails, RefreshParts } from './types'
+import type { KiroAuthDetails, ManagedAccount, RefreshParts } from './types'
+
+/**
+ * Credentials for a billable call on the account the next request would use,
+ * refreshed if the access token is spent. Counts a use against the account, so
+ * account rotation and the quota indicator see it.
+ */
+export function resolveActiveAuth(accountManager: AccountManager): Promise<KiroAuthDetails> {
+  return resolveAuth(accountManager, accountManager.getCurrentOrNext())
+}
+
+/** As resolveActiveAuth, for calls that spend no Kiro credits. */
+export function peekActiveAuth(accountManager: AccountManager): Promise<KiroAuthDetails> {
+  return resolveAuth(accountManager, accountManager.peekCurrentOrNext())
+}
+
+async function resolveAuth(
+  accountManager: AccountManager,
+  account: ManagedAccount | null
+): Promise<KiroAuthDetails> {
+  if (!account) throw new Error('No healthy Kiro account available')
+
+  const auth = accountManager.toAuthDetails(account)
+  if (!accessTokenExpired(auth)) return auth
+
+  const refreshed = await refreshAccessToken(auth)
+  accountManager.updateFromAuth(account, refreshed)
+  return refreshed
+}
 
 export async function refreshAccessToken(auth: KiroAuthDetails): Promise<KiroAuthDetails> {
   const p = decodeRefreshToken(auth.refresh)

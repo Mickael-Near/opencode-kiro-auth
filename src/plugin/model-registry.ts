@@ -1,170 +1,15 @@
 import { Model, Provider } from '@opencode/plugin'
-import { EFFORT_LEVELS, supportsEffort, supportsXHighEffort, THINKING_BUDGETS } from './effort.js'
-import { resolveKiroModel } from './models.js'
-
-type Modalities = {
-  input: Array<'text' | 'image' | 'pdf'>
-  output: ['text']
-}
-
-const TEXT_ONLY: Modalities = { input: ['text'], output: ['text'] }
-const TEXT_IMAGE: Modalities = { input: ['text', 'image'], output: ['text'] }
-const MULTIMODAL: Modalities = { input: ['text', 'image', 'pdf'], output: ['text'] }
-
-const CONTEXT_200K = { context: 200000, output: 64000 }
-const CONTEXT_1M = { context: 1000000, output: 64000 }
-
-interface ModelSpec {
-  /** Display name, without the credit multiplier suffix. */
-  name: string
-  /** Kiro credit multiplier, rendered into the display name. */
-  rate: string
-  limit: { context: number; output: number }
-  modalities: Modalities
-  /**
-   * Emit a companion `-thinking` entry. Only set for Claude models that accept
-   * `output_config.effort`; the effort ladder is derived from the model's own
-   * capabilities in effort.ts.
-   */
-  thinking?: boolean
-}
+import { THINKING_BUDGETS } from './effort.js'
+import { getCatalog, type KiroModel } from './model-catalog.js'
+import { THINKING_SUFFIX, toOpenCodeModelID } from './models.js'
 
 /**
- * Models Kiro exposes, keyed by the OpenCode-facing model ID.
+ * Model definitions advertised to OpenCode, derived from the Kiro catalog.
  *
- * Anthropic and open-weight models only. Kiro's GPT-5.6 tiers are deliberately
- * absent: they configure reasoning through `reasoning.effort` / `reasoning.mode`
- * rather than `output_config.effort`, so they need their own request path.
- */
-const MODEL_SPECS: Record<string, ModelSpec> = {
-  auto: { name: 'Auto', rate: '1.0x', limit: CONTEXT_200K, modalities: MULTIMODAL },
-
-  // Claude Sonnet
-  'claude-sonnet-4': {
-    name: 'Claude Sonnet 4.0',
-    rate: '1.3x',
-    limit: CONTEXT_200K,
-    modalities: MULTIMODAL
-  },
-  'claude-sonnet-4-5': {
-    name: 'Claude Sonnet 4.5',
-    rate: '1.3x',
-    limit: CONTEXT_200K,
-    modalities: MULTIMODAL,
-    thinking: true
-  },
-  'claude-sonnet-4-6': {
-    name: 'Claude Sonnet 4.6',
-    rate: '1.3x',
-    limit: CONTEXT_1M,
-    modalities: MULTIMODAL,
-    thinking: true
-  },
-  'claude-sonnet-5': {
-    name: 'Claude Sonnet 5',
-    rate: '1.3x',
-    limit: CONTEXT_1M,
-    modalities: MULTIMODAL,
-    thinking: true
-  },
-
-  // Claude Haiku
-  'claude-haiku-4-5': {
-    name: 'Claude Haiku 4.5',
-    rate: '0.4x',
-    limit: CONTEXT_200K,
-    modalities: TEXT_IMAGE
-  },
-
-  // Claude Opus
-  'claude-opus-4-5': {
-    name: 'Claude Opus 4.5',
-    rate: '2.2x',
-    limit: CONTEXT_200K,
-    modalities: MULTIMODAL,
-    thinking: true
-  },
-  'claude-opus-4-6': {
-    name: 'Claude Opus 4.6',
-    rate: '2.2x',
-    limit: CONTEXT_1M,
-    modalities: MULTIMODAL,
-    thinking: true
-  },
-  'claude-opus-4-7': {
-    name: 'Claude Opus 4.7',
-    rate: '2.2x',
-    limit: CONTEXT_1M,
-    modalities: MULTIMODAL,
-    thinking: true
-  },
-  'claude-opus-4-8': {
-    name: 'Claude Opus 4.8',
-    rate: '2.2x',
-    limit: CONTEXT_1M,
-    modalities: MULTIMODAL,
-    thinking: true
-  },
-  'claude-opus-5': {
-    name: 'Claude Opus 5',
-    rate: '2.2x',
-    limit: CONTEXT_1M,
-    modalities: MULTIMODAL,
-    thinking: true
-  },
-
-  // Open weight models
-  'deepseek-3.2': {
-    name: 'DeepSeek 3.2',
-    rate: '0.25x',
-    limit: { context: 128000, output: 64000 },
-    modalities: TEXT_ONLY
-  },
-  'glm-5': { name: 'GLM-5', rate: '0.5x', limit: CONTEXT_200K, modalities: TEXT_ONLY },
-  'minimax-m2.5': {
-    name: 'MiniMax M2.5',
-    rate: '0.25x',
-    limit: { context: 196000, output: 64000 },
-    modalities: TEXT_ONLY
-  },
-  'minimax-m2.1': {
-    name: 'MiniMax M2.1',
-    rate: '0.15x',
-    limit: { context: 196000, output: 64000 },
-    modalities: TEXT_ONLY
-  },
-  'qwen3-coder-next': {
-    name: 'Qwen3 Coder Next',
-    rate: '0.05x',
-    limit: { context: 256000, output: 64000 },
-    modalities: TEXT_ONLY
-  }
-}
-
-/**
- * Build the thinking variants a model supports.
- *
- * Levels come from the model's own effort capabilities, so xhigh only appears on
- * models that accept it and the budgets stay in step with budgetToEffort. The
- * budget travels as a request body field, which the Kiro request builder reads
- * to pick the matching `output_config.effort`.
- */
-function buildVariants(kiroModel: string): Model.Variant[] {
-  const variants: Model.Variant[] = []
-
-  for (const level of EFFORT_LEVELS) {
-    if (level === 'xhigh' && !supportsXHighEffort(kiroModel)) continue
-    variants.push({
-      id: Model.VariantID.make(level),
-      settings: { thinkingConfig: { thinkingBudget: THINKING_BUDGETS[level] } }
-    })
-  }
-
-  return variants
-}
-
-/**
- * Model definitions advertised to OpenCode.
+ * Every model Kiro lists is advertised as-is, including the ones it added after
+ * this plugin shipped. Models that declare an `output_config.effort` schema also
+ * get a `-thinking` companion whose variants mirror the effort levels Kiro
+ * accepts for that model.
  *
  * `-thinking` entries declare `compatibility.reasoningField`. The plugin streams
  * reasoning as the non-standard `reasoning_content` delta (see
@@ -173,47 +18,55 @@ function buildVariants(kiroModel: string): Model.Variant[] {
  * block is rendered.
  */
 export function buildModelRegistry(providerID: string): Model.Info[] {
-  const models: Model.Info[] = []
   const provider = Provider.ID.make(providerID)
+  const models: Model.Info[] = []
 
-  for (const [modelID, spec] of Object.entries(MODEL_SPECS)) {
-    models.push(createModel(provider, modelID, spec, false))
+  for (const model of getCatalog()) {
+    models.push(createModel(provider, model, false))
 
-    if (!spec.thinking) continue
-
-    // Effort capability is keyed on the resolved Kiro model ID (e.g. claude-opus-5
-    // vs claude-sonnet-4.5), not the OpenCode-facing one.
-    const kiroModel = resolveKiroModel(modelID)
-    if (!supportsEffort(kiroModel)) continue
-
-    models.push(createModel(provider, `${modelID}-thinking`, spec, true))
+    if (model.effortLevels.length > 0) {
+      models.push(createModel(provider, model, true))
+    }
   }
 
   return models
 }
 
-function createModel(
-  providerID: Provider.ID,
-  modelID: string,
-  spec: ModelSpec,
-  thinking: boolean
-): Model.Info {
-  const kiroModel = resolveKiroModel(modelID)
+function createModel(providerID: Provider.ID, model: KiroModel, thinking: boolean): Model.Info {
+  const modelID = toOpenCodeModelID(model.id) + (thinking ? THINKING_SUFFIX : '')
+  const suffix = `${thinking ? ' Thinking' : ''} (${formatRate(model.rate)})`
 
   return {
     ...Model.Info.default(providerID, Model.ID.make(modelID)),
-    name: thinking ? `${spec.name} Thinking (${spec.rate})` : `${spec.name} (${spec.rate})`,
-    limit: spec.limit,
+    name: `${model.name}${suffix}`,
+    limit: { ...model.limit },
     capabilities: {
       tools: true,
-      input: [...spec.modalities.input],
-      output: [...spec.modalities.output]
+      input: [...model.input],
+      output: ['text']
     },
     ...(thinking
       ? {
           compatibility: { reasoningField: 'reasoning_content' as const },
-          variants: buildVariants(kiroModel)
+          variants: buildVariants(model)
         }
       : {})
   }
+}
+
+/**
+ * Build one variant per effort level the model accepts, ordered lowest to
+ * highest. The budget travels as a request body field, which the Kiro request
+ * builder maps back to the matching `output_config.effort`.
+ */
+function buildVariants(model: KiroModel): Model.Variant[] {
+  return model.effortLevels.map((level) => ({
+    id: Model.VariantID.make(level),
+    settings: { thinkingConfig: { thinkingBudget: THINKING_BUDGETS[level] } }
+  }))
+}
+
+/** Kiro credit multiplier as it appears in the picker: 1 → `1.0x`, 0.25 → `0.25x`. */
+function formatRate(rate: number): string {
+  return `${Number.isInteger(rate) ? rate.toFixed(1) : rate}x`
 }

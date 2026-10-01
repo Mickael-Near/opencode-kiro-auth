@@ -1,9 +1,7 @@
 import { KIRO_CONSTANTS } from '../constants.js'
-import { accessTokenExpired } from '../kiro/auth.js'
 import type { AccountManager } from './accounts.js'
 import * as logger from './logger.js'
-import { refreshAccessToken } from './token.js'
-import type { KiroAuthDetails } from './types'
+import { resolveActiveAuth } from './token.js'
 
 // Kiro exposes a server-side web search via the CodeWhisperer InvokeMCP target.
 // It speaks JSON-RPC (tools/call) and requires a profileArn, so it is only
@@ -33,16 +31,9 @@ export async function kiroWebSearch(
   accountManager: AccountManager,
   query: string
 ): Promise<WebSearchResult[]> {
-  const account = accountManager.getCurrentOrNext()
-  if (!account) throw new Error('No healthy Kiro account available')
-  if (!account.profileArn) {
+  const auth = await resolveActiveAuth(accountManager)
+  if (!auth.profileArn) {
     throw new Error('Web search requires a Kiro Pro account (no profileArn on this account)')
-  }
-
-  let auth: KiroAuthDetails = accountManager.toAuthDetails(account)
-  if (accessTokenExpired(auth)) {
-    auth = await refreshAccessToken(auth)
-    accountManager.updateFromAuth(account, auth)
   }
 
   const trimmed = query.length > MAX_QUERY_LENGTH ? query.slice(0, MAX_QUERY_LENGTH) : query

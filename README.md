@@ -4,8 +4,9 @@
 [![npm downloads](https://img.shields.io/npm/dm/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 [![license](https://img.shields.io/npm/l/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 
-OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude Sonnet and Haiku
-models with substantial trial quotas.
+OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude Opus, Sonnet and
+Haiku, OpenAI's GPT-5.6 tiers, and open-weight models (DeepSeek, GLM, MiniMax, Qwen),
+with substantial trial quotas.
 
 ## Features
 
@@ -13,6 +14,8 @@ models with substantial trial quotas.
   Start URL), and Kiro Desktop (CLI-based) authentication.
 - **Auto-Sync Kiro CLI**: Automatically imports and synchronizes active sessions from
   your local `kiro-cli` SQLite database.
+- **Live Model Discovery**: Reads the model list from your Kiro account at startup, so
+  a model Kiro ships appears after a restart without a plugin update.
 - **Gradual Context Truncation**: Intelligently prevents error 400 by reducing context
   size dynamically during retries.
 - **Intelligent Account Rotation**: Prioritizes multi-account usage based on lowest
@@ -39,19 +42,39 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 }
 ```
 
-That is the whole configuration. The plugin registers the `kiro` provider and
-advertises every model Kiro exposes, including a `-thinking` companion for each
-model that supports reasoning effort. Run `/models` to pick one.
+That is the whole configuration. On startup the plugin asks Kiro which models your
+account can use, then registers the `kiro` provider with all of them, including a
+`-thinking` companion for each model that supports reasoning effort. Run `/models`
+to pick one.
 
-Defining `providers.kiro.models` yourself replaces the plugin's registry entirely.
-Only do that to rename or restrict models, and see the reasoning flags below if
-any of them are `-thinking` models.
+Because the list comes from the account, it reflects your plan and region: a Pro
+account sees models a free Builder ID account does not. Anything Kiro adds to your
+plan shows up after an OpenCode restart, with no plugin update and nothing to
+configure. Display names carry Kiro's own credit multiplier, and context limits and
+input modalities are whatever Kiro declares for the model.
+
+If the lookup cannot be made or fails — no account yet, offline, expired
+subscription — the plugin falls back to a bundled snapshot of the model list and
+records the reason in `~/.config/opencode/kiro-logs/plugin.log`. The snapshot is a
+floor rather than the source of truth, so it goes stale between releases.
+
+Model IDs drop the dots OpenCode does not allow: Kiro's `claude-opus-5.5` is
+advertised as `claude-opus-5-5`. Kiro folded its 1M variants into the base models,
+and the retired `-1m` IDs still resolve, so existing configs keep working.
+
+Defining `providers.kiro.models` yourself replaces the discovered list entirely, and
+with it the automatic updates. Only do that to rename or restrict models, and see
+the reasoning flags below if any of them are `-thinking` models.
 
 ### Thinking Effort Configuration
 
-Every effort-capable Claude model gets a `-thinking` companion, already carrying
-the reasoning flags and an effort ladder as variants. Nothing to configure: pick a
+Every effort-capable model gets a `-thinking` companion, already carrying the
+reasoning flags and an effort ladder as variants. Nothing to configure: pick a
 `-thinking` model and cycle its variants to change reasoning depth.
+
+Which models are effort-capable, and which levels each one offers, comes from the
+model's own schema in Kiro's model list rather than a fixed list in the plugin. A
+model's ladder is exactly the `output_config.effort` enum Kiro declares for it.
 
 Each `-thinking` entry declares the compatibility override OpenCode needs in order
 to render reasoning:
@@ -78,7 +101,7 @@ Nothing needs to be enabled for that. Models that instead inline reasoning as
 
 Variants set `settings.thinkingConfig.thinkingBudget`, which the plugin maps to
 Kiro's native `effort` field. Bands are scaled to Kiro's real thinking ceiling
-(1024-128000 on opus-4.8/opus-5), so every effort level including `xhigh` is
+(1024-128000 on the deepest models), so every effort level including `xhigh` is
 reachable from a budget alone:
 
 | OpenCode budget | Kiro effort |
@@ -89,13 +112,13 @@ reachable from a budget alone:
 | `<= 98304` | `xhigh` |
 | `> 98304` | `max` |
 
-`xhigh` is only available on opus-4.7, opus-4.8, opus-5 and sonnet-5. Those models
-get a five-variant ladder; the rest get four, and a budget in the `xhigh` band is
-clamped to `max`.
+Not every model accepts every level: `xhigh` in particular is limited to the deepest
+models, and which those are changes as Kiro ships models. A budget landing in a band
+the model rejects is clamped to the deepest level it does accept.
 
-Kiro's GPT-5.6 tiers are not advertised. They configure reasoning through
-`reasoning.effort` / `reasoning.mode` instead of `output_config.effort`, so they
-need a separate request path.
+Kiro's GPT-5.6 tiers are advertised like any other model, but they configure
+reasoning through `reasoning.effort` / `reasoning.mode` instead of
+`output_config.effort`, so they get no `-thinking` companion.
 
 Use `~/.config/opencode/kiro.json` for plugin-wide behavior such as auth sync,
 account selection, retry limits, and `auto_effort_mapping`. A top-level `effort`

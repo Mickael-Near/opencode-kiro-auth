@@ -1,46 +1,39 @@
-import { describe, expect, test } from 'bun:test'
-import { SUPPORTED_MODELS } from '../constants.js'
+import { afterEach, describe, expect, test } from 'bun:test'
 import type { Effort } from '../plugin/config/schema.js'
 import { budgetToEffort, THINKING_BUDGETS } from '../plugin/effort.js'
+import { activateCatalog, FALLBACK_CATALOG, type KiroModel } from '../plugin/model-catalog.js'
 import { buildModelRegistry } from '../plugin/model-registry.js'
 import { resolveKiroModel } from '../plugin/models.js'
 
-const registry = new Map(buildModelRegistry('kiro').map((model) => [model.id as string, model]))
+function buildRegistry() {
+  return new Map(buildModelRegistry('kiro').map((model) => [model.id as string, model]))
+}
 
+const registry = buildRegistry()
 const thinkingIDs = [...registry.keys()].filter((id) => id.endsWith('-thinking'))
-const XHIGH_MODELS = [
-  'claude-opus-4-7-thinking',
-  'claude-opus-4-8-thinking',
-  'claude-opus-5-thinking',
-  'claude-sonnet-5-thinking'
-]
+
+afterEach(() => activateCatalog(FALLBACK_CATALOG))
 
 describe('model registry', () => {
-  test('every advertised model is resolvable to a Kiro model ID', () => {
-    for (const modelID of registry.keys()) {
-      expect(SUPPORTED_MODELS).toContain(modelID)
+  test('advertises every catalog model, resolvable back to its Kiro ID', () => {
+    for (const model of FALLBACK_CATALOG) {
+      const modelID = model.id.replaceAll('.', '-')
+      expect(registry.has(modelID)).toBe(true)
+      expect(resolveKiroModel(modelID)).toBe(model.id)
     }
   })
 
-  test('advertises a thinking companion for each effort-capable Claude model', () => {
-    expect(thinkingIDs.sort()).toEqual(
-      [
-        'claude-opus-4-5-thinking',
-        'claude-opus-4-6-thinking',
-        'claude-opus-4-7-thinking',
-        'claude-opus-4-8-thinking',
-        'claude-opus-5-thinking',
-        'claude-sonnet-4-5-thinking',
-        'claude-sonnet-4-6-thinking',
-        'claude-sonnet-5-thinking'
-      ].sort()
+  test('advertises a thinking companion for exactly the effort-capable models', () => {
+    const expected = FALLBACK_CATALOG.filter((model) => model.effortLevels.length > 0).map(
+      (model) => `${model.id.replaceAll('.', '-')}-thinking`
     )
+    expect(thinkingIDs.sort()).toEqual(expected.sort())
   })
 
-  test('does not advertise Kiro GPT tiers, which use a different reasoning contract', () => {
-    for (const id of registry.keys()) {
-      expect(id.startsWith('gpt-')).toBe(false)
-    }
+  test('renders the Kiro credit multiplier into the display name', () => {
+    expect(registry.get('claude-opus-5-5')?.name).toBe('Claude Opus 5.5 (2.0x)')
+    expect(registry.get('claude-opus-5-thinking')?.name).toBe('Claude Opus 5 Thinking (2.2x)')
+    expect(registry.get('qwen3-coder-next')?.name).toBe('Qwen3 Coder Next (0.05x)')
   })
 
   describe('reasoning capability flags', () => {
@@ -61,10 +54,12 @@ describe('model registry', () => {
   })
 
   describe('thinking variants', () => {
-    test('offers xhigh only on models Kiro documents as xhigh-capable', () => {
-      for (const id of thinkingIDs) {
+    test('offers exactly the effort levels Kiro accepts for the model', () => {
+      for (const model of FALLBACK_CATALOG) {
+        if (model.effortLevels.length === 0) continue
+        const id = `${model.id.replaceAll('.', '-')}-thinking`
         const variantIDs = (registry.get(id)?.variants ?? []).map((variant) => String(variant.id))
-        expect(variantIDs.includes('xhigh')).toBe(XHIGH_MODELS.includes(id))
+        expect(variantIDs).toEqual([...model.effortLevels])
       }
     })
 
@@ -93,13 +88,34 @@ describe('model registry', () => {
   })
 
   test('carries limit and capabilities through to both entries', () => {
-    expect(registry.get('claude-opus-5')?.limit).toEqual({ context: 1000000, output: 64000 })
+    expect(registry.get('claude-opus-5')?.limit).toEqual({ context: 1000000, output: 128000 })
     expect(registry.get('claude-opus-5-thinking')?.limit).toEqual(
       registry.get('claude-opus-5')?.limit
     )
     expect(registry.get('claude-opus-5-thinking')?.capabilities).toEqual(
       registry.get('claude-opus-5')?.capabilities
     )
-    expect(registry.get('claude-opus-5')?.capabilities.input).toEqual(['text', 'image', 'pdf'])
+    expect(registry.get('claude-opus-5')?.capabilities.input).toEqual(['text', 'image'])
+    expect(registry.get('glm-5')?.capabilities.input).toEqual(['text'])
+  })
+
+  // A model Kiro adds after this plugin ships has to appear without a code change.
+  test('advertises models the bundled snapshot has never seen', () => {
+    const unknown: KiroModel = {
+      id: 'claude-fable-6.1',
+      name: 'Claude Fable 6.1',
+      rate: 6,
+      limit: { context: 1000000, output: 128000 },
+      input: ['text', 'image'],
+      effortLevels: ['low', 'medium', 'high']
+    }
+    activateCatalog([unknown])
+
+    const fresh = buildRegistry()
+    expect([...fresh.keys()]).toEqual(['claude-fable-6-1', 'claude-fable-6-1-thinking'])
+    expect(fresh.get('claude-fable-6-1')?.name).toBe('Claude Fable 6.1 (6.0x)')
+    expect(
+      (fresh.get('claude-fable-6-1-thinking')?.variants ?? []).map((variant) => String(variant.id))
+    ).toEqual(['low', 'medium', 'high'])
   })
 })

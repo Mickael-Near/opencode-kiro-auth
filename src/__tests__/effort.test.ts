@@ -1,15 +1,17 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import {
   budgetToEffort,
   getEffectiveEffort,
   resolveEffort,
-  supportsEffort,
-  supportsXHighEffort
+  supportsEffort
 } from '../plugin/effort.js'
+import { activateCatalog, FALLBACK_CATALOG } from '../plugin/model-catalog.js'
+
+afterEach(() => activateCatalog(FALLBACK_CATALOG))
 
 describe('effort module', () => {
   describe('supportsEffort', () => {
-    test('returns true for supported models', () => {
+    test('returns true for models Kiro gives an effort schema', () => {
       expect(supportsEffort('claude-opus-4.8')).toBe(true)
       expect(supportsEffort('claude-opus-4.7')).toBe(true)
       expect(supportsEffort('claude-sonnet-4.6')).toBe(true)
@@ -19,25 +21,29 @@ describe('effort module', () => {
       expect(supportsEffort('claude-opus-5')).toBe(true)
     })
 
-    test('returns false for unsupported models', () => {
+    test('returns false for models Kiro gives none', () => {
       expect(supportsEffort('claude-haiku-4.5')).toBe(false)
+      expect(supportsEffort('claude-opus-4.5')).toBe(false)
+      expect(supportsEffort('gpt-5.6-sol')).toBe(false)
       expect(supportsEffort('unknown-model')).toBe(false)
     })
-  })
 
-  describe('supportsXHighEffort', () => {
-    test('returns true for opus 4.7/4.8/5 and sonnet 5', () => {
-      expect(supportsXHighEffort('claude-opus-4.8')).toBe(true)
-      expect(supportsXHighEffort('claude-opus-4.7')).toBe(true)
-      expect(supportsXHighEffort('claude-opus-5')).toBe(true)
-      expect(supportsXHighEffort('claude-sonnet-5')).toBe(true)
-      expect(supportsXHighEffort('claude-sonnet-5-1m')).toBe(true)
-    })
+    // Capability follows the catalog, so a model Kiro adds later needs no code change.
+    test('follows the catalog rather than a hardcoded list', () => {
+      activateCatalog([
+        {
+          id: 'claude-fable-6.1',
+          name: 'Claude Fable 6.1',
+          rate: 6,
+          limit: { context: 1000000, output: 128000 },
+          input: ['text'],
+          effortLevels: ['low', 'high']
+        }
+      ])
 
-    test('returns false for other models', () => {
-      expect(supportsXHighEffort('claude-opus-4.6')).toBe(false)
-      expect(supportsXHighEffort('claude-sonnet-4.6')).toBe(false)
-      expect(supportsXHighEffort('claude-opus-4.5')).toBe(false)
+      expect(supportsEffort('claude-fable-6.1')).toBe(true)
+      expect(resolveEffort('claude-fable-6.1', 'max')).toBe('high')
+      expect(supportsEffort('claude-opus-5')).toBe(false)
     })
   })
 
@@ -52,9 +58,10 @@ describe('effort module', () => {
       expect(resolveEffort('claude-opus-4.8', 'xhigh')).toBe('xhigh')
       expect(resolveEffort('claude-opus-5', 'xhigh')).toBe('xhigh')
       expect(resolveEffort('claude-opus-5', 'max')).toBe('max')
+      expect(resolveEffort('claude-sonnet-5-1m', 'xhigh')).toBe('xhigh')
     })
 
-    test('clamps xhigh to max for models without xhigh support', () => {
+    test('clamps a rejected level to the deepest one the model accepts', () => {
       expect(resolveEffort('claude-sonnet-4.6', 'xhigh')).toBe('max')
       expect(resolveEffort('claude-opus-4.6', 'xhigh')).toBe('max')
     })

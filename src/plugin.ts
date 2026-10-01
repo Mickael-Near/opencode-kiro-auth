@@ -8,7 +8,9 @@ import { AccountRepository } from './infrastructure/database/account-repository.
 import { AccountManager } from './plugin/accounts.js'
 import { loadConfig } from './plugin/config/index.js'
 import * as logger from './plugin/logger.js'
+import { loadCatalog } from './plugin/model-catalog.js'
 import { buildModelRegistry } from './plugin/model-registry.js'
+import { peekActiveAuth } from './plugin/token.js'
 import { usageRpc } from './plugin/usage-rpc.js'
 import { aggregateUsage } from './plugin/usage.js'
 import { formatWebSearchResults, kiroWebSearch } from './plugin/web-search.js'
@@ -126,6 +128,11 @@ export const createKiroPlugin = (id: string): Plugin.Plugin => ({
       logger.error('Auth init failed', e instanceof Error ? e : new Error(String(e)))
     }
 
+    // Kiro ships models continuously, so the list is read from the account rather
+    // than hardcoded. This has to settle before the provider transform below,
+    // which is the only point OpenCode reads the model registry.
+    await loadCatalog(() => peekActiveAuth(accountManager))
+
     if (authMethods.length > 0) {
       await ctx.integration.transform((editor) => {
         editor.update(id, (integration) => {
@@ -177,7 +184,7 @@ export const createKiroPlugin = (id: string): Plugin.Plugin => ({
         )
     })
 
-    const account = accountManager.getCurrentOrNext()
+    const account = accountManager.peekCurrentOrNext()
     if (config.web_search_enabled && account?.profileArn) {
       await ctx.tool.transform((editor) => {
         editor.add({

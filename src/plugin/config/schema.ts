@@ -8,11 +8,17 @@ export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySc
  * - low: minimal reasoning
  * - medium: balanced (default when thinking enabled)
  * - high: deeper reasoning
- * - xhigh: extended reasoning (xhigh-capable models only, see effort.ts)
- * - max: maximum reasoning depth (up to 128k thinking tokens on opus-4.8/opus-5)
+ * - xhigh: extended reasoning (not accepted by every model)
+ * - max: maximum reasoning depth (up to 128k thinking tokens on the deepest models)
+ *
+ * The order is load-bearing: model-catalog.ts sorts each model's effort ladder by
+ * it, and effort.ts reads the last entry as the deepest level a model accepts.
  */
 export const EffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 export type Effort = z.infer<typeof EffortSchema>
+
+/** Every effort level, lowest to highest reasoning depth. */
+export const EFFORT_LEVELS: readonly Effort[] = EffortSchema.options
 
 export const RegionSchema = z.enum([
   'us-east-1',
@@ -86,7 +92,8 @@ export const KiroConfigSchema = z.object({
   /**
    * Default effort level for thinking models. Controls reasoning depth.
    * When set, this overrides the automatic budget-based mapping.
-   * Values: 'low', 'medium', 'high', 'xhigh' (see XHIGH_CAPABLE_MODELS), 'max'
+   * Values: 'low', 'medium', 'high', 'xhigh', 'max'. A level the model rejects
+   * is clamped to the deepest one it accepts.
    */
   effort: EffortSchema.optional(),
 

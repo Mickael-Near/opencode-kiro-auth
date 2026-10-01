@@ -96,7 +96,34 @@ export class AccountManager {
     const waits = this.accounts.map((a) => (a.rateLimitResetTime || 0) - now).filter((t) => t > 0)
     return waits.length > 0 ? Math.min(...waits) : 0
   }
+  /**
+   * The account the next request would use, without counting a use against it.
+   *
+   * For reads that do not spend Kiro credits, so quota accounting and
+   * lowest-usage ordering stay driven by real requests.
+   */
+  peekCurrentOrNext(): ManagedAccount | null {
+    return this.selectAccount().account ?? null
+  }
   getCurrentOrNext(): ManagedAccount | null {
+    const { account, fromFallback } = this.selectAccount()
+    if (!account) return null
+
+    account.lastUsed = Date.now()
+    account.usedCount = (account.usedCount || 0) + 1
+    if (this.strategy === 'round-robin') {
+      // Round-robin only advances past accounts it picked in rotation; a
+      // fallback pick is out of band and leaves the rotation where it was.
+      if (!fromFallback) {
+        this.cursor = (this.accounts.indexOf(account) + 1) % this.accounts.length
+      }
+    } else {
+      this.cursor = this.accounts.indexOf(account)
+    }
+    return account
+  }
+  /** Which account the strategy picks, leaving usage counters untouched. */
+  private selectAccount(): { account?: ManagedAccount; fromFallback: boolean } {
     const now = Date.now()
     const available = this.accounts.filter((a) => {
       if (!a.isHealthy) {
@@ -124,7 +151,6 @@ export class AccountManager {
           const candidate = this.accounts[(this.cursor + i) % n]
           if (candidate && available.includes(candidate)) {
             selected = candidate
-            this.cursor = (this.accounts.indexOf(candidate) + 1) % n
             break
           }
         }
@@ -150,18 +176,10 @@ export class AccountManager {
       if (fallback) {
         fallback.isHealthy = true
         delete fallback.unhealthyReason
-        selected = fallback
+        return { account: fallback, fromFallback: true }
       }
     }
-    if (selected) {
-      selected.lastUsed = now
-      selected.usedCount = (selected.usedCount || 0) + 1
-      if (this.strategy !== 'round-robin') {
-        this.cursor = this.accounts.indexOf(selected)
-      }
-      return selected
-    }
-    return null
+    return { account: selected, fromFallback: false }
   }
   updateUsage(id: string, meta: { usedCount: number; limitCount: number; email?: string }): void {
     const a = this.accounts.find((x) => x.id === id)
