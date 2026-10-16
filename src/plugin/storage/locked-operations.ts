@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { existsSync, promises as fs } from 'node:fs'
 import lockfile from 'proper-lockfile'
 import { isPermanentError } from '../health'
@@ -16,8 +15,6 @@ const LOCK_OPTIONS = {
 }
 
 export async function withDatabaseLock<T>(dbPath: string, fn: () => Promise<T>): Promise<T> {
-  const lockPath = `${dbPath}.lock`
-
   if (!existsSync(dbPath)) {
     const dir = dbPath.substring(0, dbPath.lastIndexOf('/'))
     await fs.mkdir(dir, { recursive: true })
@@ -37,16 +34,6 @@ export async function withDatabaseLock<T>(dbPath: string, fn: () => Promise<T>):
       }
     }
   }
-}
-
-export function createDeterministicId(
-  email: string,
-  authMethod: string,
-  clientId?: string,
-  profileArn?: string
-): string {
-  const parts = [email, authMethod, clientId || '', profileArn || ''].join(':')
-  return createHash('sha256').update(parts).digest('hex')
 }
 
 export function mergeAccounts(

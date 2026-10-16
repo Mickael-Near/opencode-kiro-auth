@@ -25,34 +25,3 @@ export function parseBracketToolCalls(text: string): ToolCall[] {
 
   return toolCalls
 }
-
-export function deduplicateToolCalls(toolCalls: ToolCall[]): ToolCall[] {
-  const seen = new Set<string>()
-  const unique: ToolCall[] = []
-
-  for (const tc of toolCalls) {
-    if (!seen.has(tc.toolUseId)) {
-      seen.add(tc.toolUseId)
-      unique.push(tc)
-    }
-  }
-
-  return unique
-}
-
-export function cleanToolCallsFromText(text: string, toolCalls: ToolCall[]): string {
-  let cleaned = text
-
-  for (const tc of toolCalls) {
-    const funcName = tc.name
-    const escapedName = funcName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const pattern = new RegExp(
-      `\\[Called\\s+${escapedName}\\s+with\\s+args:\\s*\\{[^}]*(?:\\{[^}]*\\}[^}]*)*\\}\\]`,
-      'gs'
-    )
-    cleaned = cleaned.replace(pattern, '')
-  }
-
-  cleaned = cleaned.replace(/\s+/g, ' ').trim()
-  return cleaned
-}

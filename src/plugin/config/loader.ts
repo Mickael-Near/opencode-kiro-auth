@@ -184,11 +184,3 @@ export function loadConfig(directory: string): KiroConfig {
 
   return config
 }
-
-export function configExists(path: string): boolean {
-  return existsSync(path)
-}
-
-export function getDefaultLogsDir(): string {
-  return join(getConfigDir(), 'kiro-logs')
-}

@@ -1,6 +1,5 @@
 import * as crypto from 'crypto'
-import * as os from 'os'
-import { KIRO_CONSTANTS, buildUrl, extractRegionFromArn } from '../constants.js'
+import { KIRO_CONSTANTS, extractRegionFromArn } from '../constants.js'
 import {
   buildHistory,
   extractToolNamesFromHistory,
@@ -28,7 +27,6 @@ import type {
   CodeWhispererRequest,
   Effort,
   KiroAuthDetails,
-  PreparedRequest,
   SdkPreparedRequest,
   ThinkingRequest,
   ToolNameMap
@@ -296,51 +294,6 @@ function buildCodeWhispererRequest(
   return { request, resolved, convId, toolNameMap: toolNameRegistry.toOriginalMap() }
 }
 
-export function transformToCodeWhisperer(
-  url: string,
-  body: any,
-  model: string,
-  auth: KiroAuthDetails,
-  think = false,
-  budget = 20000
-): PreparedRequest {
-  const { request, resolved, convId, toolNameMap } = buildCodeWhispererRequest(
-    body,
-    model,
-    auth,
-    think,
-    budget
-  )
-  const osP = os.platform(),
-    osR = os.release(),
-    nodeV = process.version.replace('v', '')
-  const osN =
-    osP === 'win32' ? `windows#${osR}` : osP === 'darwin' ? `macos#${osR}` : `${osP}#${osR}`
-  const ua = `aws-sdk-js/3.738.0 ua/2.1 os/${osN} lang/js md/nodejs#${nodeV} api/codewhisperer#3.738.0 m/E KiroIDE`
-  return {
-    url: buildUrl(KIRO_CONSTANTS.BASE_URL, extractRegionFromArn(auth.profileArn) ?? auth.region),
-    init: {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: `Bearer ${auth.access}`,
-        'amz-sdk-invocation-id': crypto.randomUUID(),
-        'amz-sdk-request': 'attempt=1; max=1',
-        'x-amzn-kiro-agent-mode': 'vibe',
-        'x-amz-user-agent': 'aws-sdk-js/3.738.0 KiroIDE',
-        'user-agent': ua,
-        Connection: 'close'
-      },
-      body: JSON.stringify(request)
-    },
-    streaming: true,
-    effectiveModel: resolved,
-    conversationId: convId,
-    toolNameMap
-  }
-}
-
 export function transformToSdkRequest(
   body: any,
   model: string,
@@ -374,7 +327,6 @@ export function transformToSdkRequest(
   return {
     conversationState: request.conversationState,
     profileArn: request.profileArn,
-    streaming: true,
     effectiveModel: resolved,
     conversationId: convId,
     region: extractRegionFromArn(auth.profileArn) ?? auth.region,

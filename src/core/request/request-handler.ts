@@ -163,7 +163,6 @@ export class RequestHandler {
           sdkResponse,
           model,
           sdkPrep.conversationId,
-          sdkPrep.streaming,
           sdkPrep.toolNameMap
         )
       } catch (e: any) {

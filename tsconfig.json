@@ -8,6 +8,7 @@
     "jsxImportSource": "@opentui/solid",
     "types": ["bun-types", "node"],
     "strict": true,
+    "noUnusedLocals": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,

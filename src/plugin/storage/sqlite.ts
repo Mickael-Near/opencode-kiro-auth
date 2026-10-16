@@ -250,8 +250,4 @@ export class KiroDatabase {
   }
 }
 
-export function createDatabase(path?: string): KiroDatabase {
-  return new KiroDatabase(path)
-}
-
 export const kiroDb = new KiroDatabase()

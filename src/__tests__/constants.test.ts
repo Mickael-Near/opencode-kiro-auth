@@ -8,12 +8,12 @@ describe('normalizeRegion', () => {
 })
 
 describe('buildUrl', () => {
-  test('substitutes the region into every Kiro endpoint template', () => {
+  test('substitutes the region into the Kiro endpoint templates', () => {
     expect(buildUrl(KIRO_CONSTANTS.AVAILABLE_MODELS_URL, 'eu-central-1')).toBe(
       'https://q.eu-central-1.amazonaws.com/ListAvailableModels'
     )
-    expect(buildUrl(KIRO_CONSTANTS.USAGE_LIMITS_URL, 'us-east-1')).toBe(
-      'https://q.us-east-1.amazonaws.com/getUsageLimits'
+    expect(buildUrl(KIRO_CONSTANTS.BASE_URL, 'us-east-1')).toBe(
+      'https://q.us-east-1.amazonaws.com/generateAssistantResponse'
     )
   })
 })

@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { ResponseHandler } from '../core/request/response-handler.js'
 import {
   convertToolsToCodeWhisperer,
   restoreToolName
@@ -398,82 +397,5 @@ describe('CodeWhisperer tool compatibility', () => {
         arguments: '{"path":"README.md"}'
       }
     ])
-  })
-
-  test('restores original tool names in non-streaming responses', async () => {
-    const wireName = 'datadog_security_findings_0123456789abcdef0123456789abcdef'
-    const response = await (new ResponseHandler().handleSdkSuccess as any)(
-      sdkResponse(wireName),
-      MODEL,
-      'conversation-1',
-      false,
-      { [wireName]: LONG_TOOL_NAME }
-    )
-    const body = await response.json()
-
-    expect(body.choices[0].message.tool_calls[0].function.name).toBe(LONG_TOOL_NAME)
-  })
-
-  test('reassembles interleaved non-streaming tool events by tool-use id', async () => {
-    const wireName = 'datadog_security_findings_0123456789abcdef0123456789abcdef'
-    const fragmentedResponse = {
-      generateAssistantResponseResponse: (async function* () {
-        yield {
-          toolUseEvent: {
-            name: wireName,
-            toolUseId: 'tool-use-1',
-            input: '{"query":'
-          }
-        }
-        yield {
-          toolUseEvent: {
-            name: 'search_docs',
-            toolUseId: 'tool-use-2',
-            input: '{"path":'
-          }
-        }
-        yield {
-          toolUseEvent: {
-            toolUseId: 'tool-use-1',
-            input: '"status"}',
-            stop: true
-          }
-        }
-        yield {
-          toolUseEvent: {
-            toolUseId: 'tool-use-2',
-            input: '"README.md"}',
-            stop: true
-          }
-        }
-      })()
-    }
-
-    const response = await new ResponseHandler().handleSdkSuccess(
-      fragmentedResponse,
-      MODEL,
-      'conversation-1',
-      false,
-      { [wireName]: LONG_TOOL_NAME }
-    )
-    const body = await response.json()
-
-    expect(body.choices[0].message.tool_calls).toHaveLength(2)
-    expect(body.choices[0].message.tool_calls[0]).toEqual({
-      id: 'tool-use-1',
-      type: 'function',
-      function: {
-        name: LONG_TOOL_NAME,
-        arguments: '{"query":"status"}'
-      }
-    })
-    expect(body.choices[0].message.tool_calls[1]).toEqual({
-      id: 'tool-use-2',
-      type: 'function',
-      function: {
-        name: 'search_docs',
-        arguments: '{"path":"README.md"}'
-      }
-    })
   })
 })

@@ -56,7 +56,6 @@ export const RegionSchema = z.enum([
   'me-central-1',
   'sa-east-1'
 ])
-export type Region = z.infer<typeof RegionSchema>
 
 export const KiroConfigSchema = z.object({
   $schema: z.string().optional(),

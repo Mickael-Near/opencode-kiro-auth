@@ -97,29 +97,11 @@ export interface ToolCall {
   input: string | Record<string, unknown>
 }
 
-export interface ParsedResponse {
-  content: string
-  toolCalls: ToolCall[]
-  stopReason?: string
-  inputTokens?: number
-  outputTokens?: number
-}
-
 export type ToolNameMap = Readonly<Record<string, string>>
-
-export interface PreparedRequest {
-  url: string
-  init: RequestInit
-  streaming: boolean
-  effectiveModel: string
-  conversationId: string
-  toolNameMap?: ToolNameMap
-}
 
 export interface SdkPreparedRequest {
   conversationState: CodeWhispererRequest['conversationState']
   profileArn?: string
-  streaming: boolean
   effectiveModel: string
   conversationId: string
   region: string

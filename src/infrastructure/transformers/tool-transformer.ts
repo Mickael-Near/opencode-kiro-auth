@@ -1,7 +1,6 @@
 import crypto from 'crypto'
 import type { ToolNameMap } from '../../plugin/types.js'
 
-export const CODEWHISPERER_TOOL_NAME_MAX_LENGTH = 64
 export const CODEWHISPERER_DESCRIPTION_MAX_LENGTH = 1024
 export const CODEWHISPERER_SCHEMA_MAX_DEPTH = 32
 
