@@ -14,6 +14,17 @@ interface PendingToolCall {
   input: string
 }
 
+/**
+ * OpenAI-compatible error chunk. `@ai-sdk/openai-compatible` accepts this shape
+ * on the SSE stream and turns it into a provider error event carrying `message`,
+ * which OpenCode records on the assistant message. Throwing from the generator
+ * instead would be replaced by the SDK's generic "Failed to process successful
+ * response" wrapper, losing the diagnostic.
+ */
+function errorChunk(message: string, code = 'kiro_stream_error'): any {
+  return { error: { message, type: code, code } }
+}
+
 export async function* transformSdkStream(
   sdkResponse: any,
   model: string,
@@ -21,6 +32,7 @@ export async function* transformSdkStream(
   toolNameMap?: ToolNameMap
 ): AsyncGenerator<any> {
   const thinkingRequested = true
+  const startedAt = Date.now()
 
   const streamState: StreamState = {
     thinkingRequested,
@@ -180,6 +192,19 @@ export async function* transformSdkStream(
               typeof tc.input === 'string' ? tc.input : (JSON.stringify(tc.input) ?? '')
           }
         }
+      } else if (event.error) {
+        // In-band service errors (InternalServerException, throttling, model
+        // temporarily unavailable) used to be dropped, which let a cut response
+        // pass as a normal end_turn. Surface the message instead.
+        const detail = event.error.message || event.error.name || 'the service reported a failure'
+        yield errorChunk(`Kiro error: ${detail}`)
+        return
+      } else if (event.invalidStateEvent) {
+        const invalid = event.invalidStateEvent
+        yield errorChunk(
+          `Kiro error: ${invalid.message || invalid.reason || 'the service rejected the request mid-stream'}`
+        )
+        return
       } else if (event.metadataEvent) {
         if (event.metadataEvent.contextUsagePercentage) {
           contextUsagePercentage = event.metadataEvent.contextUsagePercentage
@@ -234,6 +259,24 @@ export async function* transformSdkStream(
           input: typeof btc.input === 'string' ? btc.input : JSON.stringify(btc.input)
         })
       }
+    }
+
+    // A stream that ends after reasoning with no text and no tool call is a
+    // truncated response, not an answer. Observed with long Opus 5.5 reasoning:
+    // the upstream stream is cut (the event-stream reader treats a severed
+    // connection as a clean end), and reporting end_turn here used to store a
+    // silent, contentless turn in OpenCode.
+    if (
+      streamState.thinkingBlockIndex !== null &&
+      streamState.textBlockIndex === null &&
+      toolCalls.length === 0
+    ) {
+      const seconds = Math.round((Date.now() - startedAt) / 1000)
+      yield errorChunk(
+        `Kiro stream ended after ${seconds}s of reasoning with no answer or tool call; the upstream response was cut off. Retry, or lower the effort level if this repeats.`,
+        'kiro_stream_truncated'
+      )
+      return
     }
 
     if (toolCalls.length > 0) {
