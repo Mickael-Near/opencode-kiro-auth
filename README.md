@@ -27,8 +27,9 @@ with substantial trial quotas.
   without any model configuration.
 - **Kiro Effort Mapping**: Maps OpenCode thinking budgets to Kiro's native effort
   levels automatically, across the full `low`–`max` ladder.
-- **Credit Quota In The Footer**: A CLI plugin shows the pooled Kiro credit usage
-  under the prompt and on the home screen, refreshed as requests land.
+- **Credit Quota Indicator**: A CLI plugin shows the pooled Kiro credit usage under
+  the prompt and on the home screen; a GUI plugin shows it in OpenCode Desktop.
+  Both refresh as requests land.
 - **Automated Recovery**: Exponential backoff for rate limits and automated token
   refresh.
 
@@ -165,6 +166,23 @@ counts by a per-million price, and Kiro does not bill that way — it debits cre
 a monthly allowance, at a rate that depends on the model (Opus costs 2.2x a base
 request). Any dollar amount here would be an invented Anthropic list price rather than
 your Kiro consumption, so the plugin reports the credits instead.
+
+### OpenCode Desktop
+
+OpenCode Desktop never loads the CLI plugin, so the package ships a GUI plugin for it
+that reads the same RPC. It loads automatically when the package is in the global
+`opencode.json` `plugins` list. It requires OpenCode 2.2 or later, whose GUI plugin
+API is still marked experimental upstream.
+
+Settings > Kiro toggles three placements independently, and clicking any of them opens
+that page:
+
+- A pill above the composer, next to the todo and background work pills (on by
+  default).
+- A pill in the titlebar, visible on every screen.
+- A strip at the bottom of the window, above the toasts.
+
+All three switch to a warning icon from 90% of the allowance, like the terminal footer.
 
 ## Setup
 

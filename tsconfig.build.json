@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "include": ["src/**/*"],
   // src/tui.tsx ships as source: OpenCode applies the Solid JSX transform when it
-  // loads the CLI entrypoint, which tsc cannot reproduce.
-  "exclude": ["**/*.test.ts", "**/*.spec.ts", "src/tui.tsx"]
+  // loads the CLI entrypoint, which tsc cannot reproduce. src/gui.tsx is bundled
+  // by `vite build` into dist/gui-experimental.cjs instead.
+  "exclude": ["**/*.test.ts", "**/*.spec.ts", "src/tui.tsx", "src/gui.tsx"]
 }
