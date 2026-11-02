@@ -83,6 +83,7 @@ export async function syncFromKiroCli() {
 
         let usedCount = 0
         let limitCount = 0
+        let usageSyncedAt = 0
         let email: string | undefined
         let usageOk = false
 
@@ -101,6 +102,7 @@ export async function syncFromKiroCli() {
           const u = await fetchUsageLimits(authForUsage)
           usedCount = u.usedCount || 0
           limitCount = u.limitCount || 0
+          usageSyncedAt = Date.now()
           if (typeof u.email === 'string' && u.email) {
             email = u.email
             usageOk = true
@@ -227,6 +229,7 @@ export async function syncFromKiroCli() {
           failCount: 0,
           usedCount,
           limitCount,
+          usageSyncedAt,
           lastSync: Date.now()
         })
 

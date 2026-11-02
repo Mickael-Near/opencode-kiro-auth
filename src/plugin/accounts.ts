@@ -71,7 +71,8 @@ export class AccountManager {
       failCount: r.fail_count || 0,
       lastUsed: r.last_used,
       usedCount: r.used_count,
-      limitCount: r.limit_count
+      limitCount: r.limit_count,
+      usageSyncedAt: r.usage_synced_at
     }))
     return new AccountManager(accounts, strategy || 'sticky')
   }
@@ -110,7 +111,6 @@ export class AccountManager {
     if (!account) return null
 
     account.lastUsed = Date.now()
-    account.usedCount = (account.usedCount || 0) + 1
     if (this.strategy === 'round-robin') {
       // Round-robin only advances past accounts it picked in rotation; a
       // fallback pick is out of band and leaves the rotation where it was.
@@ -186,6 +186,7 @@ export class AccountManager {
     if (a) {
       a.usedCount = meta.usedCount
       a.limitCount = meta.limitCount
+      a.usageSyncedAt = Date.now()
       if (meta.email) a.email = meta.email
       if (!isPermanentError(a.unhealthyReason)) {
         a.failCount = 0
@@ -201,6 +202,36 @@ export class AccountManager {
         })
       )
     }
+  }
+  /**
+   * Adopt quota figures another plugin instance stored after this one read them.
+   *
+   * OpenCode runs one plugin instance per open directory, and every instance on
+   * the machine shares the account database, which holds the latest Kiro report.
+   * Returns whether any figure changed.
+   */
+  reloadUsage(): boolean {
+    let rows: any[]
+    try {
+      rows = kiroDb.getAccounts()
+    } catch (e) {
+      logger.warn('DB read failed', {
+        method: 'reloadUsage',
+        error: e instanceof Error ? e.message : String(e)
+      })
+      return false
+    }
+    const rowsById = new Map(rows.map((r) => [r.id, r]))
+    let changed = false
+    for (const a of this.accounts) {
+      const row = rowsById.get(a.id)
+      if (!row || (row.usage_synced_at || 0) <= (a.usageSyncedAt || 0)) continue
+      a.usedCount = row.used_count
+      a.limitCount = row.limit_count
+      a.usageSyncedAt = row.usage_synced_at
+      changed = true
+    }
+    return changed
   }
   addAccount(a: ManagedAccount): void {
     const i = this.accounts.findIndex((x) => x.id === a.id)

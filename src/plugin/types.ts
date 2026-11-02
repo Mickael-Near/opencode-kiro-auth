@@ -46,6 +46,8 @@ export interface ManagedAccount {
   failCount: number
   usedCount?: number
   limitCount?: number
+  /** When Kiro last reported `usedCount` and `limitCount`; 0 when it never has. */
+  usageSyncedAt?: number
   lastSync?: number
   lastUsed?: number
 }

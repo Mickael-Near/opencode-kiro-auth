@@ -49,6 +49,26 @@ describe('Kiro CLI account sync', () => {
     expect(merged.accessToken).toBe('fresh-access')
   })
 
+  test('keeps the most recent Kiro usage report, even when it is lower', () => {
+    const existing = account({ usedCount: 3281.17, limitCount: 2000, usageSyncedAt: 0 })
+    const incoming = account({ usedCount: 12.5, limitCount: 2000, usageSyncedAt: 5000 })
+
+    const merged = mergeAccounts([existing], [incoming])[0]!
+
+    expect(merged.usedCount).toBe(12.5)
+    expect(merged.usageSyncedAt).toBe(5000)
+  })
+
+  test('keeps stored usage when the incoming write carries an older report', () => {
+    const existing = account({ usedCount: 140, limitCount: 2000, usageSyncedAt: 5000 })
+    const incoming = account({ usedCount: 120, limitCount: 2000, usageSyncedAt: 4000 })
+
+    const merged = mergeAccounts([existing], [incoming])[0]!
+
+    expect(merged.usedCount).toBe(140)
+    expect(merged.usageSyncedAt).toBe(5000)
+  })
+
   test('deactivates stale cached CLI account variants after a successful CLI import', () => {
     const synced = {
       id: 'current-id',

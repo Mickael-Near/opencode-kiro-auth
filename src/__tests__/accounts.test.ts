@@ -3,9 +3,10 @@ import { AccountManager, createDeterministicAccountId } from '../plugin/accounts
 import type { ManagedAccount } from '../plugin/types.js'
 
 // Mock DB and external dependencies
+let storedRows: any[] = []
 mock.module('../plugin/storage/sqlite.js', () => ({
   kiroDb: {
-    getAccounts: () => [],
+    getAccounts: () => storedRows,
     upsertAccount: () => Promise.resolve(),
     deleteAccount: () => Promise.resolve(),
     batchUpsertAccounts: () => Promise.resolve()
@@ -113,11 +114,11 @@ describe('AccountManager.getCurrentOrNext', () => {
     expect(new AccountManager([acc]).getCurrentOrNext()).toBeNull()
   })
 
-  test('increments usedCount and sets lastUsed on selection', () => {
+  test('sets lastUsed on selection and leaves the Kiro-reported usedCount alone', () => {
     const acc = makeAccount({ usedCount: 5 })
     const mgr = new AccountManager([acc])
     mgr.getCurrentOrNext()
-    expect(acc.usedCount).toBe(6)
+    expect(acc.usedCount).toBe(5)
     expect(acc.lastUsed).toBeGreaterThan(0)
   })
 
@@ -304,6 +305,39 @@ describe('AccountManager.updateUsage', () => {
     const mgr = new AccountManager([acc])
     expect(() => mgr.updateUsage('unknown', { usedCount: 99, limitCount: 99 })).not.toThrow()
     expect(acc.usedCount).toBe(0) // unchanged
+  })
+
+  test('records when Kiro reported the figures', () => {
+    const acc = makeAccount()
+    const mgr = new AccountManager([acc])
+    mgr.updateUsage(acc.id, { usedCount: 50, limitCount: 500 })
+    expect(acc.usageSyncedAt).toBeGreaterThan(0)
+  })
+})
+
+// ── reloadUsage ───────────────────────────────────────────────────────────────
+
+describe('AccountManager.reloadUsage', () => {
+  test('adopts a newer report stored by another instance', () => {
+    const acc = makeAccount({ usedCount: 10, limitCount: 2000, usageSyncedAt: 1000 })
+    storedRows = [{ id: acc.id, used_count: 42, limit_count: 2000, usage_synced_at: 2000 }]
+    expect(new AccountManager([acc]).reloadUsage()).toBe(true)
+    expect(acc.usedCount).toBe(42)
+    expect(acc.usageSyncedAt).toBe(2000)
+  })
+
+  test('keeps its own figures when the stored report is older', () => {
+    const acc = makeAccount({ usedCount: 10, limitCount: 2000, usageSyncedAt: 2000 })
+    storedRows = [{ id: acc.id, used_count: 3281, limit_count: 2000, usage_synced_at: 0 }]
+    expect(new AccountManager([acc]).reloadUsage()).toBe(false)
+    expect(acc.usedCount).toBe(10)
+  })
+
+  test('ignores rows for accounts it does not manage', () => {
+    const acc = makeAccount({ usageSyncedAt: 0 })
+    storedRows = [{ id: 'other', used_count: 5, limit_count: 50, usage_synced_at: 9000 }]
+    expect(new AccountManager([acc]).reloadUsage()).toBe(false)
+    expect(acc.usedCount).toBe(0)
   })
 })
 

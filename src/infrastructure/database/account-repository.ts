@@ -32,6 +32,7 @@ export class AccountRepository {
       lastUsed: r.last_used,
       usedCount: r.used_count,
       limitCount: r.limit_count,
+      usageSyncedAt: r.usage_synced_at,
       lastSync: r.last_sync
     }))
 

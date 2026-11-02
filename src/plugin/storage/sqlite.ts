@@ -56,8 +56,8 @@ export class KiroDatabase {
         id, email, auth_method, region, oidc_region, client_id, client_secret,
         profile_arn, start_url, refresh_token, access_token, expires_at, rate_limit_reset,
         is_healthy, unhealthy_reason, recovery_time, fail_count, last_used,
-        used_count, limit_count, last_sync
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        used_count, limit_count, usage_synced_at, last_sync
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         id=excluded.id, email=excluded.email, auth_method=excluded.auth_method,
         region=excluded.region, oidc_region=excluded.oidc_region, client_id=excluded.client_id, client_secret=excluded.client_secret,
@@ -66,7 +66,8 @@ export class KiroDatabase {
         rate_limit_reset=excluded.rate_limit_reset, is_healthy=excluded.is_healthy,
         unhealthy_reason=excluded.unhealthy_reason, recovery_time=excluded.recovery_time,
         fail_count=excluded.fail_count, last_used=excluded.last_used,
-        used_count=excluded.used_count, limit_count=excluded.limit_count, last_sync=excluded.last_sync
+        used_count=excluded.used_count, limit_count=excluded.limit_count,
+        usage_synced_at=excluded.usage_synced_at, last_sync=excluded.last_sync
     `
       )
       .run(
@@ -90,6 +91,7 @@ export class KiroDatabase {
         acc.lastUsed || 0,
         acc.usedCount || 0,
         acc.limitCount || 0,
+        acc.usageSyncedAt || 0,
         acc.lastSync || 0
       )
   }
@@ -241,6 +243,7 @@ export class KiroDatabase {
       lastUsed: row.last_used,
       usedCount: row.used_count,
       limitCount: row.limit_count,
+      usageSyncedAt: row.usage_synced_at,
       lastSync: row.last_sync
     }
   }

@@ -9,6 +9,7 @@ export function runMigrations(db: Database): void {
   migrateStartUrlColumn(db)
   migrateOidcRegionColumn(db)
   migrateDropRefreshTokenUniqueIndex(db)
+  migrateUsageSyncedAtColumn(db)
 }
 
 function migrateToUniqueRefreshToken(db: Database): void {
@@ -181,5 +182,15 @@ function migrateDropRefreshTokenUniqueIndex(db: Database): void {
     for (const row of rows.slice(1)) {
       db.prepare('DELETE FROM accounts WHERE id = ?').run(row.id)
     }
+  }
+}
+
+function migrateUsageSyncedAtColumn(db: Database): void {
+  // Rows written before this column hold a used_count inflated by a per-request
+  // counter; 0 marks them as never reported, so the next Kiro report replaces them.
+  const columns = db.prepare('PRAGMA table_info(accounts)').all() as any[]
+  const names = new Set(columns.map((c) => c.name))
+  if (!names.has('usage_synced_at')) {
+    db.exec('ALTER TABLE accounts ADD COLUMN usage_synced_at INTEGER DEFAULT 0')
   }
 }

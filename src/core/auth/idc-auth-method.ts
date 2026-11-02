@@ -115,6 +115,7 @@ export class IdcAuthMethod {
             inputs?.profile_arn?.trim() || configuredProfileArn || readActiveProfileArnFromKiroCli()
           const serviceRegion = extractRegionFromArn(profileArn) || configuredServiceRegion
           let usage: any = { usedCount: 0, limitCount: 0, email: undefined }
+          let usageSyncedAt = 0
           try {
             usage = await fetchUsageLimits({
               refresh: '',
@@ -126,6 +127,7 @@ export class IdcAuthMethod {
               clientSecret: token.clientSecret,
               profileArn
             })
+            usageSyncedAt = Date.now()
           } catch (e) {
             logger.warn('fetchUsageLimits failed during auth', {
               error: e instanceof Error ? e.message : String(e)
@@ -183,7 +185,8 @@ export class IdcAuthMethod {
             isHealthy: true,
             failCount: 0,
             usedCount: usage.usedCount,
-            limitCount: usage.limitCount
+            limitCount: usage.limitCount,
+            usageSyncedAt
           }
 
           await this.repository.save(acc)

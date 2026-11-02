@@ -19,6 +19,8 @@ type ToastFunction = (message: string, variant: string) => void
 
 const KIRO_PROVIDER_ID = 'kiro'
 
+const USAGE_RELOAD_INTERVAL_MS = 15_000
+
 // OpenCode resolves the provider runtime from the `aisdk:` prefix, then hands the
 // model to `ctx.aisdk.hook("sdk")`. The plugin replaces that SDK with its own
 // instance so every Kiro call is served by the in-process request handler.
@@ -173,16 +175,28 @@ export const createKiroPlugin = (id: string): Plugin.Plugin => ({
     // cost accounting cannot express credits against an allowance, so the quota
     // is published over RPC for the footer indicator to read.
     const usage = await ctx.rpc.register(usageRpc, {
-      get: async () => aggregateUsage(accountManager.getAccounts())
+      get: async () => {
+        accountManager.reloadUsage()
+        return aggregateUsage(accountManager.getAccounts())
+      }
     })
 
-    requestHandler.onUsageChange(() => {
+    const publishUsage = (): void => {
       void usage.events
         .emit('updated', aggregateUsage(accountManager.getAccounts()))
         .catch((e) =>
           logger.debug(`Usage event emit failed: ${e instanceof Error ? e.message : String(e)}`)
         )
-    })
+    }
+
+    requestHandler.onUsageChange(publishUsage)
+
+    // Another instance (another directory, or the terminal) may have stored a
+    // newer Kiro report; pick it up so every window shows the same figures.
+    const usageReload = setInterval(() => {
+      if (accountManager.reloadUsage()) publishUsage()
+    }, USAGE_RELOAD_INTERVAL_MS)
+    usageReload.unref?.()
 
     const account = accountManager.peekCurrentOrNext()
     if (config.web_search_enabled && account?.profileArn) {
@@ -203,6 +217,8 @@ export const createKiroPlugin = (id: string): Plugin.Plugin => ({
         })
       })
     }
+
+    return () => clearInterval(usageReload)
   }
 })
 

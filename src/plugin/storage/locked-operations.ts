@@ -54,13 +54,18 @@ export function mergeAccounts(
       const hasPermanentError =
         isPermanentError(existingAcc.unhealthyReason) || incomingHasPermanentError
       const incomingRecovered = acc.isHealthy && !incomingHasPermanentError
+      // Several processes write the same row, some with figures read long ago,
+      // so the latest Kiro report wins: credits drop back at the monthly reset.
+      const usageSource =
+        (acc.usageSyncedAt || 0) > (existingAcc.usageSyncedAt || 0) ? acc : existingAcc
 
       accountMap.set(acc.id, {
         ...existingAcc,
         ...acc,
         lastUsed: Math.max(existingAcc.lastUsed || 0, acc.lastUsed || 0),
-        usedCount: Math.max(existingAcc.usedCount || 0, acc.usedCount || 0),
-        limitCount: Math.max(existingAcc.limitCount || 0, acc.limitCount || 0),
+        usedCount: usageSource.usedCount,
+        limitCount: usageSource.limitCount,
+        usageSyncedAt: usageSource.usageSyncedAt,
         rateLimitResetTime: Math.max(
           existingAcc.rateLimitResetTime || 0,
           acc.rateLimitResetTime || 0
