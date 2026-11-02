@@ -11,7 +11,7 @@
       "import": "./dist/index.js"
     },
     "./tui": "./src/tui.tsx",
-    "./gui-experimental": "./dist/gui-experimental.cjs"
+    "./gui-experimental": "./dist/kiro-desktop/gui-experimental.cjs"
   },
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs && vite build",

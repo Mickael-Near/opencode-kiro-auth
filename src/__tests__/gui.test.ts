@@ -11,11 +11,14 @@ const { createRoot } = await import('solid-js')
 const SNAPSHOT: UsageSnapshot = { used: 1691.37, limit: 2000, pct: 85, accounts: 1 }
 const WARNING_SNAPSHOT: UsageSnapshot = { used: 1900, limit: 2000, pct: 95, accounts: 1 }
 
+const SESSION_LOCATION = { directory: '/workspace' }
+
 type Prefs = { composer: boolean; titlebar: boolean; bottom: boolean }
+type Get = (input: object, options: { location: unknown }) => Promise<UsageSnapshot>
 
 function makeContext(
   prefs: Prefs,
-  get: () => Promise<UsageSnapshot> = async () => SNAPSHOT
+  get: Get = async () => SNAPSHOT
 ): {
   context: any
   items: Map<string, any>
@@ -25,6 +28,27 @@ function makeContext(
   const items = new Map<string, any>()
   let handler: ((event: { data: UsageSnapshot }) => void) | undefined
   let value = prefs
+
+  // The quota comes from the routed session's server, not from `ctx.client`:
+  // on Windows the desktop app's own server is not the WSL one running Kiro.
+  const SESSION = {
+    location: SESSION_LOCATION,
+    server: {
+      client: {
+        rpc: () => ({
+          get,
+          events: {
+            on: (_name: string, listener: (event: { data: UsageSnapshot }) => void) => {
+              handler = listener
+              return () => {
+                handler = undefined
+              }
+            }
+          }
+        })
+      }
+    }
+  }
 
   const context = {
     stores: {
@@ -37,19 +61,7 @@ function makeContext(
         }
       }
     },
-    client: {
-      rpc: () => ({
-        get,
-        events: {
-          on: (_name: string, listener: (event: { data: UsageSnapshot }) => void) => {
-            handler = listener
-            return () => {
-              handler = undefined
-            }
-          }
-        }
-      })
-    },
+    sessions: { current: () => SESSION },
     t: (key: string) => key,
     layout: { settings: mock(() => {}) },
     add: (registry: { id: string }, item: unknown) => {
@@ -66,7 +78,7 @@ function makeContext(
   }
 }
 
-async function setup(prefs: Prefs, get?: () => Promise<UsageSnapshot>) {
+async function setup(prefs: Prefs, get?: Get) {
   const harness = makeContext(prefs, get)
   createRoot(() => guiPlugin.setup!(harness.context))
   await Bun.sleep(0)
@@ -87,6 +99,13 @@ describe('kiro GUI plugin', () => {
       'slot',
       'titlebar-item'
     ])
+  })
+
+  test("asks the routed session's server for the quota at its location", async () => {
+    const get = mock<Get>(async () => SNAPSHOT)
+    await setup({ composer: true, titlebar: false, bottom: false }, get)
+
+    expect(get).toHaveBeenCalledWith({}, expect.objectContaining({ location: SESSION_LOCATION }))
   })
 
   test('shows the quota only where the user enabled it', async () => {

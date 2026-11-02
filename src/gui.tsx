@@ -72,21 +72,26 @@ export default Plugin.define({
     const prefs = ctx.stores.prefs
     const [snapshot, setSnapshot] = createSignal<UsageSnapshot>()
 
-    // `ctx.client` is a new object after the desktop server restarts. Keying on
-    // it re-subscribes when the host exposes that change reactively, and
-    // otherwise subscribes once, which is what a plain read would do anyway.
+    // The desktop app loads this bundle from its own server, which is not
+    // necessarily the one running the Kiro server part: a WSL or remote server
+    // runs the sessions. Read the quota from the routed session's server, and
+    // keep the last figures on Home, where no session is routed.
     createKeyed(
-      () => ctx.client,
-      (client) => {
+      () => {
+        const session = ctx.sessions.current()
+        return session?.location && { client: session.server.client, location: session.location }
+      },
+      ({ client, location }) => {
         const abort = new AbortController()
         onCleanup(() => abort.abort())
         const usage = client.rpc(usageRpc)
-        usage.get({}, { signal: abort.signal }).then(
+        usage.get({}, { location, signal: abort.signal }).then(
           (value) => {
             setSnapshot(value)
           },
           () => {
-            // No Kiro server plugin yet: stay hidden until an update arrives.
+            // No Kiro server plugin on this server: hide the indicator.
+            setSnapshot(undefined)
           }
         )
         usage.events.on(
@@ -96,6 +101,12 @@ export default Plugin.define({
           },
           { signal: abort.signal }
         )
+      },
+      {
+        equals: (previous, next) =>
+          previous.client === next.client &&
+          previous.location.directory === next.location.directory &&
+          previous.location.workspaceID === next.location.workspaceID
       }
     )
 

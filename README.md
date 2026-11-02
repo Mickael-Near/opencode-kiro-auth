@@ -183,6 +183,22 @@ that page:
 - A strip at the bottom of the window, above the toasts.
 
 All three switch to a warning icon from 90% of the allowance, like the terminal footer.
+The figures come from the server of the session on screen, and stay put on Home.
+
+The desktop app reads GUI plugins only from its own background server. When sessions
+run on another server, such as a WSL distro on Windows, that server loads the Kiro
+plugin but the app never asks it for the GUI. List the GUI on its own in the app's
+`opencode.json` too (`%USERPROFILE%\.config\opencode\opencode.jsonc` on Windows),
+pointing at the `dist/kiro-desktop` directory of the package:
+
+```jsonc
+{
+  "plugins": [{ "package": "D:\\path\\to\\opencode-kiro-auth\\dist\\kiro-desktop" }]
+}
+```
+
+That directory holds only the GUI bundle, so the app's own server runs no Kiro code
+and keeps no second account database.
 
 ## Setup
 
