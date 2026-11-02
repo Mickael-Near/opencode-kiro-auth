@@ -5,6 +5,7 @@ import type { KiroConfig } from '../../plugin/config'
 import { parseThinkingRequest } from '../../plugin/effort'
 import { isPermanentError } from '../../plugin/health'
 import * as logger from '../../plugin/logger'
+import { measurePayload } from '../../plugin/payload-stats'
 import { transformToSdkRequest } from '../../plugin/request'
 import { createSdkClient } from '../../plugin/sdk-client'
 import { syncFromKiroCli } from '../../plugin/sync/kiro-cli'
@@ -219,6 +220,10 @@ export class RequestHandler {
 
           const errMsg = e?.message || `Kiro Error: ${httpStatus}`
           if (/input is too long/i.test(errMsg)) {
+            logger.warn('Kiro rejected the input as too long', {
+              model: sdkPrep.effectiveModel,
+              ...measurePayload(sdkPrep.conversationState)
+            })
             return new Response(
               JSON.stringify({
                 error: {

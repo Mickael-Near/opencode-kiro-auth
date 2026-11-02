@@ -7,6 +7,7 @@ let apiResponseLogCalls = 0
 let sdkErrorMessage = 'The bearer token included in the request is invalid'
 let sdkErrorName = 'ForbiddenException'
 let sdkHttpStatus = 403
+let warnings: Array<{ message: string; details?: unknown }> = []
 
 mock.module('../plugin/logger.js', () => ({
   debug: () => {},
@@ -18,7 +19,9 @@ mock.module('../plugin/logger.js', () => ({
   logApiResponse: () => {
     apiResponseLogCalls++
   },
-  warn: () => {}
+  warn: (message: string, details?: unknown) => {
+    warnings.push({ message, details })
+  }
 }))
 
 const sendSpy = spyOn(CodeWhispererStreamingClient.prototype, 'send').mockImplementation(
@@ -42,6 +45,7 @@ function createHarness() {
   clearSdkClientCache()
   sendCalls = 0
   apiResponseLogCalls = 0
+  warnings = []
 
   const account: any = {
     id: 'account-1',
@@ -153,5 +157,11 @@ describe('RequestHandler SDK error recovery', () => {
     })
     expect(sendCalls).toBe(1)
     expect(getForceRefreshCalls()).toBe(0)
+    expect(warnings).toEqual([
+      {
+        message: 'Kiro rejected the input as too long',
+        details: expect.objectContaining({ model: 'claude-sonnet-4-5', bytes: 2 })
+      }
+    ])
   })
 })
