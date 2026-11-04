@@ -6,6 +6,7 @@ import {
   historyHasToolCalling,
   injectSystemPrompt
 } from '../infrastructure/transformers/history-builder.js'
+import { foldHistoryToLimit } from '../infrastructure/transformers/history-limit.js'
 import {
   findOriginalToolCall,
   getContentText,
@@ -255,6 +256,7 @@ function buildCodeWhispererRequest(
       }
     }
   }
+  history = foldHistoryToLimit(history)
   if (history.length > 0) (request.conversationState as any).history = history
 
   const uim = request.conversationState.currentMessage.userInputMessage
