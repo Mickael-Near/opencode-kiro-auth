@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { KIRO_CONSTANTS } from '../constants.js'
 import {
   activateCatalog,
   FALLBACK_CATALOG,
@@ -146,7 +147,9 @@ describe('loadCatalog', () => {
     expect(call?.url).toContain('https://q.eu-central-1.amazonaws.com/ListAvailableModels')
     expect(call?.url).toContain('origin=AI_EDITOR')
     expect(call?.url).toContain('profileArn=arn')
-    expect((call?.init.headers as Record<string, string>)['user-agent']).toBe('KiroIDE')
+    expect((call?.init.headers as Record<string, string>)['user-agent']).toBe(
+      KIRO_CONSTANTS.USER_AGENT
+    )
   })
 
   test('omits profileArn for accounts without one', async () => {

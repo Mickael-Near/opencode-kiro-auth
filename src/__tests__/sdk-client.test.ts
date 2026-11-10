@@ -1,5 +1,6 @@
 import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-client'
 import { describe, expect, test } from 'bun:test'
+import { KIRO_CONSTANTS } from '../constants.js'
 import { clearSdkClientCache, createSdkClient } from '../plugin/sdk-client'
 import type { Effort, KiroAuthDetails, ModelRequestFields } from '../plugin/types'
 
@@ -67,6 +68,19 @@ describe('SDK client', () => {
     expect(await client.config.maxAttempts()).toBe(3)
     const retryMode = client.config.retryMode
     expect(typeof retryMode === 'function' ? await retryMode() : retryMode).toBe('standard')
+
+    clearSdkClientCache()
+  })
+
+  test('identifies as a versioned Kiro client', async () => {
+    clearSdkClientCache()
+
+    const client = createSdkClient(auth(), 'us-east-1')
+    const { request } = await captureRequest(client)
+
+    // Kiro's backend rejects an unversioned app token with 403 FEATURE_NOT_SUPPORTED.
+    expect(request.headers['user-agent']).toContain(KIRO_CONSTANTS.USER_AGENT)
+    expect(request.headers['x-amz-user-agent']).toContain(KIRO_CONSTANTS.USER_AGENT)
 
     clearSdkClientCache()
   })

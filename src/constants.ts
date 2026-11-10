@@ -38,7 +38,10 @@ export function extractRegionFromArn(arn: string | undefined): KiroRegion | unde
 export const KIRO_CONSTANTS = {
   BASE_URL: 'https://q.{{region}}.amazonaws.com/generateAssistantResponse',
   AVAILABLE_MODELS_URL: 'https://q.{{region}}.amazonaws.com/ListAvailableModels',
-  USER_AGENT: 'KiroIDE',
+  // The app token must carry a version. Without one Kiro's inference endpoint
+  // answers 403 "This version of Kiro is no longer supported" / FEATURE_NOT_SUPPORTED.
+  // Keep this in step with a Kiro IDE release the backend still accepts.
+  USER_AGENT: 'KiroIDE-1.4.121',
   CHAT_TRIGGER_TYPE_MANUAL: 'MANUAL',
   ORIGIN_AI_EDITOR: 'AI_EDITOR'
 }
