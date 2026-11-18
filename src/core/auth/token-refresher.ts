@@ -18,7 +18,7 @@ export class TokenRefresher {
   constructor(
     private config: TokenRefresherConfig,
     private accountManager: AccountManager,
-    private syncFromKiroCli: () => Promise<void>,
+    private syncFromKiroCli: () => Promise<string[]>,
     private repository: AccountRepository
   ) {}
 
@@ -45,7 +45,7 @@ export class TokenRefresher {
 
   async forceRefresh(account: ManagedAccount, auth: KiroAuthDetails): Promise<void> {
     if (this.config.auto_sync_kiro_cli) {
-      await this.syncFromKiroCli()
+      this.accountManager.forgetAccounts(await this.syncFromKiroCli())
     }
 
     this.repository.invalidateCache()
@@ -82,7 +82,7 @@ export class TokenRefresher {
       message: error instanceof Error ? error.message : String(error)
     })
     if (this.config.auto_sync_kiro_cli) {
-      await this.syncFromKiroCli()
+      this.accountManager.forgetAccounts(await this.syncFromKiroCli())
     }
 
     this.repository.invalidateCache()

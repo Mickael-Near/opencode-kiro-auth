@@ -71,10 +71,11 @@ export class AuthHandler {
     logger.log('Auth init', { autoSyncKiroCli: !!this.config.auto_sync_kiro_cli })
     if (this.config.auto_sync_kiro_cli) {
       logger.log('Kiro CLI sync: start')
-      await syncFromKiroCli()
+      const removedIds = await syncFromKiroCli()
       this.repository.invalidateCache()
       const accounts = await this.repository.findAll()
       if (this.accountManager) {
+        this.accountManager.forgetAccounts(removedIds)
         for (const a of accounts) this.accountManager.addAccount(a)
       }
       logger.log('Kiro CLI sync: done', { importedAccounts: accounts.length })
