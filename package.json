@@ -1,5 +1,5 @@
 {
-  "name": "@zhafron/opencode-kiro-auth",
+  "name": "opencode-kiro-auth",
   "version": "3.0.0",
   "description": "OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude models",
   "type": "module",
@@ -30,14 +30,11 @@
     "ai",
     "auth"
   ],
-  "author": "tickernelz",
+  "author": "Mickael FOUQUET",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tickernelz/opencode-kiro-auth.git"
-  },
-  "publishConfig": {
-    "access": "public"
+    "url": "git+https://github.com/Mickael-Near/opencode-kiro-auth.git"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.0",
@@ -91,5 +88,6 @@
     "*.{ts,tsx}": [
       "prettier --write"
     ]
-  }
+  },
+  "private": true
 }
