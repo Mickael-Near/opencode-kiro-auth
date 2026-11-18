@@ -1,49 +1,86 @@
 # OpenCode Kiro Auth Plugin
 
-[![npm version](https://img.shields.io/npm/v/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
-[![npm downloads](https://img.shields.io/npm/dm/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
-[![license](https://img.shields.io/npm/l/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
+OpenCode 2 plugin for AWS Kiro (CodeWhisperer). It signs OpenCode in with your Kiro
+account and exposes every model that account can use: Claude Opus, Sonnet and Haiku,
+OpenAI's GPT-5.6 tiers, Grok, and open-weight models (DeepSeek, GLM, MiniMax, Qwen).
 
-OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude Opus, Sonnet and
-Haiku, OpenAI's GPT-5.6 tiers, and open-weight models (DeepSeek, GLM, MiniMax, Qwen),
-with substantial trial quotas.
+The plugin targets one Kiro account at a time, usually the one `kiro-cli` is signed in
+to. It started as a fork of
+[tickernelz/opencode-kiro-auth](https://github.com/tickernelz/opencode-kiro-auth), a
+multi-account rotation plugin, and is now maintained on its own. It is not published to
+npm: install it from source.
 
 ## Features
 
 - **Multiple Auth Methods**: Supports AWS Builder ID (IDC), IAM Identity Center (custom
   Start URL), and Kiro Desktop (CLI-based) authentication.
-- **Auto-Sync Kiro CLI**: Automatically imports and synchronizes active sessions from
-  your local `kiro-cli` SQLite database.
+- **Auto-Sync Kiro CLI**: Imports the session from your local `kiro-cli` SQLite
+  database, and forgets it again when you sign out of `kiro-cli`.
 - **Live Model Discovery**: Reads the model list from your Kiro account at startup, so
   a model Kiro ships appears after a restart without a plugin update.
 - **Gradual Context Truncation**: Intelligently prevents error 400 by reducing context
   size dynamically during retries.
-- **Intelligent Account Rotation**: Prioritizes multi-account usage based on lowest
-  available quota.
-- **High-Performance Storage**: Efficient account and usage management using native Bun
-  SQLite.
+- **Local Storage**: Keeps the account, its tokens and its credit usage in a local
+  SQLite database.
 - **Native Thinking Mode**: Streams Kiro's native reasoning to OpenCode's thinking
   block, with the reasoning field declared on every thinking model, so it renders
   without any model configuration.
 - **Kiro Effort Mapping**: Maps OpenCode thinking budgets to Kiro's native effort
   levels automatically, across the full `low`–`max` ladder.
-- **Credit Quota Indicator**: A CLI plugin shows the pooled Kiro credit usage under
-  the prompt and on the home screen; a GUI plugin shows it in OpenCode Desktop.
+- **Credit Quota Indicator**: A CLI plugin shows your Kiro credit usage under the
+  prompt and on the home screen; a GUI plugin shows it in OpenCode Desktop.
   Both refresh as requests land.
 - **Automated Recovery**: Exponential backoff for rate limits and automated token
   refresh.
 
 ## Installation
 
-Add the plugin to your `opencode.json` or `opencode.jsonc`:
+Requirements: OpenCode 2.2 or later, [Bun](https://bun.sh) and git.
 
-```json
-{
-  "plugins": ["@zhafron/opencode-kiro-auth"]
-}
+1. Clone and build the plugin. The build writes `dist/`, which OpenCode loads; git
+   ignores it, so a fresh clone has nothing to load until you build.
+
+   ```bash
+   git clone https://github.com/Mickael-Near/opencode-kiro-auth.git
+   cd opencode-kiro-auth
+   bun install
+   bun run build
+   ```
+
+2. Add the clone's **absolute** path to the global `~/.config/opencode/opencode.json`
+   (`%USERPROFILE%\.config\opencode\opencode.jsonc` on Windows). The global file is the
+   one OpenCode Desktop reads GUI plugins from.
+
+   ```json
+   {
+     "$schema": "https://opencode.ai/config.json",
+     "plugins": ["/home/you/path/to/opencode-kiro-auth"]
+   }
+   ```
+
+3. Sign in to Kiro, preferably with `kiro-cli login` (see [Setup](#setup)).
+
+OpenCode picks the config change up on its own; run `/reload` if the `kiro` provider
+does not appear.
+
+`opencode plugin add github:Mickael-Near/opencode-kiro-auth` does not work: it installs
+the repository without running the build, so the `dist/` entrypoints are missing.
+
+### Updating
+
+```bash
+cd /path/to/opencode-kiro-auth
+git pull
+bun install
+bun run build
 ```
 
-That is the whole configuration. On startup the plugin asks Kiro which models your
+Then run `/reload` in OpenCode. Nothing updates on its own: a local plugin only changes
+when you rebuild it.
+
+### Models
+
+On startup the plugin asks Kiro which models your
 account can use, then registers the `kiro` provider with all of them, one entry per
 model. Run `/models` to pick one.
 
@@ -155,11 +192,11 @@ prompt and on the home screen:
 Kiro 1691.37/2000 (85%)
 ```
 
-The figures are the credits pooled across every account the plugin manages, turning
+The figures are the credits used and the monthly allowance of your Kiro account, turning
 amber from 90% of the allowance. The server plugin publishes them over RPC and pushes
 an update whenever a request refreshes the quota, so the indicator also works when the
-terminal talks to a remote OpenCode server. Nothing to configure: listing the package
-in `plugins` loads both halves.
+terminal talks to a remote OpenCode server. Nothing to configure: listing the plugin
+directory in `plugins` loads both halves.
 
 This is deliberately not OpenCode's own `$ spent` figure. That one multiplies token
 counts by a per-million price, and Kiro does not bill that way — it debits credits from
@@ -169,10 +206,10 @@ your Kiro consumption, so the plugin reports the credits instead.
 
 ### OpenCode Desktop
 
-OpenCode Desktop never loads the CLI plugin, so the package ships a GUI plugin for it
-that reads the same RPC. It loads automatically when the package is in the global
+OpenCode Desktop never loads the CLI plugin, so the plugin ships a GUI part for it
+that reads the same RPC. It loads automatically when the plugin is in the global
 `opencode.json` `plugins` list. It requires OpenCode 2.2 or later, whose GUI plugin
-API is still marked experimental upstream.
+API is still marked experimental.
 
 Settings > Kiro toggles three placements independently, and clicking any of them opens
 that page:
@@ -189,7 +226,7 @@ The desktop app reads GUI plugins only from its own background server. When sess
 run on another server, such as a WSL distro on Windows, that server loads the Kiro
 plugin but the app never asks it for the GUI. List the GUI on its own in the app's
 `opencode.json` too (`%USERPROFILE%\.config\opencode\opencode.jsonc` on Windows),
-pointing at the `dist/kiro-desktop` directory of the package:
+pointing at the `dist/kiro-desktop` directory of the built clone:
 
 ```jsonc
 {
@@ -208,6 +245,9 @@ and keeps no second account database.
      so there is nothing to paste into OpenCode.
    - For AWS IAM Identity Center (SSO/IDC), the plugin imports both the token and device
      registration (OIDC client credentials) from the `kiro-cli` database.
+   - Signing out of `kiro-cli` (or switching from AWS Builder ID to Identity Center)
+     removes the account it imported at the next sync, so the plugin never keeps
+     serving a session you closed. Accounts added through `/connect` are left alone.
 2. **Interactive login**:
    - Run `/connect` and choose **Kiro**.
    - Pick a login method:
@@ -227,23 +267,20 @@ and keeps no second account database.
      `idc_start_url` and `idc_region`.
 3. Configuration will be automatically managed at `~/.config/opencode/kiro.db`.
 
-## Local plugin development
+## Development
 
-The simplest way to test local changes is to point OpenCode directly at your local repo
-path in `opencode.json` or `opencode.jsonc`:
-
-```json
-{
-  "plugins": ["/path/to/opencode-kiro-auth"]
-}
-```
-
-OpenCode loads the local plugin's TypeScript entrypoint directly, so restart (or let the
-plugin watcher reload) OpenCode to pick up changes. Run the tests with:
+The installed clone is also the development copy. The server part loads from `dist/`, so
+run `bun run build` after a change and `/reload` OpenCode. The TUI part
+(`src/tui.tsx`) loads from source.
 
 ```bash
-bun test
+bun test            # unit tests
+bun run typecheck   # tsc --noEmit
+bun run build       # dist/ for the server and Desktop parts
 ```
+
+The pre-commit hook runs Prettier through `bunx lint-staged`, so Bun must be on the
+`PATH` of the shell that runs `git commit`.
 
 ## Troubleshooting
 
@@ -273,13 +310,22 @@ Note for IDC/SSO (OIDC): the plugin may temporarily create an account with a pla
 email if it cannot fetch the real email during sync (e.g. offline).
 It will replace it with the real email once usage/email lookup succeeds.
 
-The plugin supports extensive configuration options.
+### Models missing from `/models`
+
+The model list comes from the account the plugin would use next. If it shows fewer
+models than your Kiro plan includes, a free AWS Builder ID account is probably still in
+`~/.config/opencode/kiro.db` next to your Identity Center account. Sign out of the
+account you no longer use with `kiro-cli logout`, then `/reload`: the next sync removes
+it. Check `~/.config/opencode/kiro-logs/plugin.log` for
+`Models: loaded N model(s) from Kiro`.
+
+## Configuration
+
 Edit `~/.config/opencode/kiro.json`:
 
 ```json
 {
   "auto_sync_kiro_cli": true,
-  "account_selection_strategy": "lowest-usage",
   "default_region": "us-east-1",
   "idc_start_url": "https://your-company.awsapps.com/start",
   "idc_region": "us-east-1",
@@ -298,8 +344,9 @@ Edit `~/.config/opencode/kiro.json`:
 ### Configuration Options
 
 - `auto_sync_kiro_cli`: Automatically sync sessions from Kiro CLI (default: `true`).
-- `account_selection_strategy`: Account rotation strategy (`sticky`, `round-robin`,
-  `lowest-usage`).
+- `account_selection_strategy`: Which account serves a request when more than one is
+  stored (`sticky`, `round-robin`, `lowest-usage`; default `lowest-usage`). Left over
+  from the multi-account origins of the plugin; with a single account it has no effect.
 - `default_region`: AWS region (`us-east-1`, `us-west-2`).
 - `idc_start_url`: Default IAM Identity Center Start URL (e.g.
   `https://your-company.awsapps.com/start`). Leave unset/blank to default to AWS Builder
@@ -335,6 +382,10 @@ Edit `~/.config/opencode/kiro.json`:
 
 ## Acknowledgements
 
+This project started from
+[tickernelz/opencode-kiro-auth](https://github.com/tickernelz/opencode-kiro-auth), by
+tickernelz, released under the MIT license.
+
 Special thanks to [AIClient-2-API](https://github.com/justlovemaki/AIClient-2-API) for
 providing the foundational Kiro authentication logic and request patterns.
 
@@ -344,5 +395,3 @@ This plugin is provided strictly for learning and educational purposes.
 It is an independent implementation and is not affiliated with, endorsed by, or
 supported by Amazon Web Services (AWS) or Anthropic.
 Use of this plugin is at your own risk.
-
-Feel free to open a PR to optimize this plugin further.
