@@ -18,7 +18,7 @@ export class AccountSelector {
   constructor(
     private accountManager: AccountManager,
     private config: AccountSelectorConfig,
-    private syncFromKiroCli: () => Promise<void>,
+    private syncFromKiroCli: () => Promise<string[]>,
     private repository: AccountRepository
   ) {}
 
@@ -64,7 +64,7 @@ export class AccountSelector {
   }
 
   private async handleEmptyAccounts(): Promise<void> {
-    await this.syncFromKiroCli()
+    this.accountManager.forgetAccounts(await this.syncFromKiroCli())
     this.repository.invalidateCache()
     const accounts = await this.repository.findAll()
     for (const a of accounts) {

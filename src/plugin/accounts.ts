@@ -260,6 +260,13 @@ export class AccountManager {
     else if (this.cursor >= this.accounts.length) this.cursor = this.accounts.length - 1
     else if (removedIndex <= this.cursor && this.cursor > 0) this.cursor--
   }
+  /** Drop accounts by ID, e.g. the ones a Kiro CLI sync deleted. */
+  forgetAccounts(ids: readonly string[]): void {
+    if (ids.length === 0) return
+    for (const acc of this.getAccounts()) {
+      if (ids.includes(acc.id)) this.removeAccount(acc)
+    }
+  }
   updateFromAuth(a: ManagedAccount, auth: KiroAuthDetails): void {
     const acc = this.accounts.find((x) => x.id === a.id)
     if (acc) {

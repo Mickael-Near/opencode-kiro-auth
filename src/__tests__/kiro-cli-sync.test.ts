@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { mergeAccounts } from '../plugin/storage/locked-operations.js'
-import { getStaleKiroCliAccountIds } from '../plugin/sync/stale-accounts.js'
+import {
+  getLoggedOutKiroCliAccountIds,
+  getStaleKiroCliAccountIds
+} from '../plugin/sync/stale-accounts.js'
 import type { ManagedAccount } from '../plugin/types.js'
 
 function account(overrides: Partial<ManagedAccount> = {}): ManagedAccount {
@@ -109,5 +112,37 @@ describe('Kiro CLI account sync', () => {
         [synced]
       )
     ).toEqual(['old-id', 'old-cli-synced-id'])
+  })
+
+  test('forgets a CLI account whose auth method was signed out of Kiro CLI', () => {
+    const builderId = { id: 'builder-id', auth_method: 'desktop', last_sync: Date.now() - 1000 }
+    const sso = { id: 'sso-id', auth_method: 'idc', last_sync: Date.now() }
+
+    expect(getLoggedOutKiroCliAccountIds([builderId, sso], new Set(['idc']))).toEqual([
+      'builder-id'
+    ])
+  })
+
+  test('forgets every CLI account once Kiro CLI holds no sign-in', () => {
+    const builderId = { id: 'builder-id', auth_method: 'desktop', last_sync: 1 }
+    const sso = { id: 'sso-id', auth_method: 'idc', last_sync: 1 }
+
+    expect(getLoggedOutKiroCliAccountIds([builderId, sso], new Set())).toEqual([
+      'builder-id',
+      'sso-id'
+    ])
+  })
+
+  test('keeps accounts added through /connect, which carry no CLI sync time', () => {
+    const connected = { id: 'connected-id', auth_method: 'idc', last_sync: 0 }
+    const connectedCamel = { id: 'connected-camel', authMethod: 'desktop' }
+
+    expect(getLoggedOutKiroCliAccountIds([connected, connectedCamel], new Set())).toEqual([])
+  })
+
+  test('keeps a CLI account whose sign-in is still in Kiro CLI, even if this import failed', () => {
+    const sso = { id: 'sso-id', auth_method: 'idc', last_sync: Date.now() - 86400000 }
+
+    expect(getLoggedOutKiroCliAccountIds([sso], new Set(['idc']))).toEqual([])
   })
 })

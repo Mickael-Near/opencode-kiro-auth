@@ -13,7 +13,7 @@ mock.module('../plugin/storage/sqlite.js', () => ({
   }
 }))
 mock.module('../plugin/sync/kiro-cli.js', () => ({
-  syncFromKiroCli: () => Promise.resolve(),
+  syncFromKiroCli: () => Promise.resolve([]),
   writeToKiroCli: () => Promise.resolve()
 }))
 mock.module('../kiro/auth.js', () => ({

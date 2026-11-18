@@ -8,6 +8,30 @@ export type SyncedCliAccount = {
   profileArn?: string
 }
 
+export type CliAuthMethod = SyncedCliAccount['authMethod']
+
+/**
+ * Accounts imported from Kiro CLI whose sign-in Kiro CLI no longer holds.
+ *
+ * Only `last_sync` marks an account as CLI-imported, so accounts added through
+ * `/connect` are never returned. An auth method still present in Kiro CLI keeps
+ * its accounts even when this sync could not import them, so a transient import
+ * failure cannot drop a working account.
+ */
+export function getLoggedOutKiroCliAccountIds(
+  accounts: any[],
+  cliAuthMethods: ReadonlySet<CliAuthMethod>
+): string[] {
+  return accounts
+    .filter((account) => {
+      if (!account?.id) return false
+      const lastSync = account.last_sync || account.lastSync || 0
+      const authMethod = account.auth_method || account.authMethod
+      return lastSync > 0 && !cliAuthMethods.has(authMethod)
+    })
+    .map((account) => account.id)
+}
+
 export const STALE_CLI_ACCOUNT_REASON =
   'InvalidTokenException: Replaced by active Kiro CLI account during sync'
 

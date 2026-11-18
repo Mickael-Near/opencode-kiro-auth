@@ -14,14 +14,22 @@ import {
 } from './kiro-cli-parser'
 import { readActiveProfileArnFromKiroCli } from './kiro-cli-profile'
 import {
+  type CliAuthMethod,
+  getLoggedOutKiroCliAccountIds,
   getStaleKiroCliAccountIds,
   STALE_CLI_ACCOUNT_REASON,
   type SyncedCliAccount
 } from './stale-accounts'
 
-export async function syncFromKiroCli() {
+/**
+ * Import Kiro CLI sign-ins into the account database, and delete the accounts
+ * of sign-ins Kiro CLI no longer holds. Resolves to the deleted account IDs so
+ * callers can drop them from memory too.
+ */
+export async function syncFromKiroCli(): Promise<string[]> {
   const dbPath = getCliDbPath()
-  if (!existsSync(dbPath)) return
+  if (!existsSync(dbPath)) return []
+  let removedIds: string[] = []
   try {
     const cliDb = new Database(dbPath, { readonly: true })
     cliDb.pragma('busy_timeout = 5000')
@@ -44,14 +52,17 @@ export async function syncFromKiroCli() {
     const deviceReg = safeJsonParse(deviceRegRow?.value)
     const regCreds = deviceReg ? findClientCredsRecursive(deviceReg) : {}
     const syncedAccounts: SyncedCliAccount[] = []
+    const cliAuthMethods = new Set<CliAuthMethod>()
 
     for (const row of rows) {
       if (row.key.includes(':token')) {
+        const isIdc = row.key.includes('odic')
+        const authMethod = isIdc ? 'idc' : 'desktop'
+        cliAuthMethods.add(authMethod)
+
         const data = safeJsonParse(row.value)
         if (!data) continue
 
-        const isIdc = row.key.includes('odic')
-        const authMethod = isIdc ? 'idc' : 'desktop'
         let profileArn: string | undefined = data.profile_arn || data.profileArn
         if (!profileArn && isIdc) profileArn = activeProfileArn || readActiveProfileArnFromKiroCli()
         // serviceRegion wins over data.region: kiro-cli stores data.region as the
@@ -253,10 +264,20 @@ export async function syncFromKiroCli() {
       logger.warn('Kiro CLI sync: deactivated stale cached accounts', { count: staleIds.length })
     }
 
+    const loggedOutIds = getLoggedOutKiroCliAccountIds(kiroDb.getAccounts(), cliAuthMethods)
+    for (const id of loggedOutIds) await kiroDb.deleteAccount(id)
+    if (loggedOutIds.length > 0) {
+      logger.log('Kiro CLI sync: removed accounts signed out of Kiro CLI', {
+        count: loggedOutIds.length
+      })
+    }
+    removedIds = loggedOutIds
+
     cliDb.close()
   } catch (e) {
     logger.error('Sync failed', e)
   }
+  return removedIds
 }
 
 export async function writeToKiroCli(acc: any) {
